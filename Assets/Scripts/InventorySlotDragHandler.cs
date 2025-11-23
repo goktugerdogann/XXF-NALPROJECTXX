@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 public class InventorySlotDragHandler : MonoBehaviour,
     IBeginDragHandler, IDragHandler, IEndDragHandler, IDropHandler
@@ -45,3 +46,4 @@ public class InventorySlotDragHandler : MonoBehaviour,
         InventoryUI.Instance.DropOnSlot(slotIndex);
     }
 }
+
