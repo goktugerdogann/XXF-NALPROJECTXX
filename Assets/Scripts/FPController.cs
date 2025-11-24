@@ -92,10 +92,11 @@ public class FPController : MonoBehaviour
     void Update()
     {
         // Envanter açýksa sadece movement çalýþsýn, mouse-look çalýþmasýn
-        if (!IsInventoryOpen)
+        if (!IsInventoryOpen && !freezeMovement)
         {
             HandleLook();
         }
+
 
         HandleCrouch();
 
@@ -123,6 +124,8 @@ public class FPController : MonoBehaviour
     #region Look
     void HandleLook()
     {
+        if (freezeMovement) return;
+
         Vector2 lookDelta = GetLookDelta();
         float invert = invertY ? 1f : -1f;
 
@@ -143,6 +146,8 @@ public class FPController : MonoBehaviour
 
     Vector2 GetLookDelta()
     {
+        if (freezeMovement)
+            return Vector2.zero;
         if (IsInventoryOpen)
             return Vector2.zero;
 #if ENABLE_INPUT_SYSTEM
@@ -161,6 +166,8 @@ public class FPController : MonoBehaviour
     #region Input
     Vector2 GetMoveInput()
     {
+        if (freezeMovement)
+            return Vector2.zero;
 #if ENABLE_INPUT_SYSTEM
         if (kb != null)
         {
@@ -181,6 +188,8 @@ public class FPController : MonoBehaviour
 
     bool JumpPressedThisFrame()
     {
+        if (freezeMovement)
+            return false;
 #if ENABLE_INPUT_SYSTEM
         if (kb != null) return kb.spaceKey.wasPressedThisFrame;
 #endif
@@ -189,6 +198,8 @@ public class FPController : MonoBehaviour
 
     bool SprintHeld()
     {
+        if (freezeMovement)
+            return false;
 #if ENABLE_INPUT_SYSTEM
         if (kb != null) return kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed;
 #endif
@@ -197,6 +208,8 @@ public class FPController : MonoBehaviour
 
     bool CrouchHeld()
     {
+        if (freezeMovement)
+            return false;
 #if ENABLE_INPUT_SYSTEM
     if (kb != null)
         return kb.leftCtrlKey.isPressed;
@@ -422,6 +435,8 @@ public class FPController : MonoBehaviour
     #region Cursor
     void HandleCursorToggle()
     {
+        if (freezeMovement)
+            return;
         if (IsInventoryOpen)
             return;
 #if ENABLE_INPUT_SYSTEM

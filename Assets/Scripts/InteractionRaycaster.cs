@@ -42,6 +42,11 @@ public class InteractionRaycaster : MonoBehaviour
     public GameObject crosshairObject;
     public bool hideCrosshairWhileCharging = true;
 
+    // Conversation block
+    [Header("Conversation Block")]
+    public bool blockPlacementFromConversation = false;
+    bool previewWasActiveBeforeConversation = false;
+
     float pickupTimer = 0f;
     bool isHoldingPickup = false;
 
@@ -87,6 +92,19 @@ public class InteractionRaycaster : MonoBehaviour
 
     void Update()
     {
+        // If villager conversation blocks placement
+        if (blockPlacementFromConversation)
+        {
+            if (previewObject != null && previewObject.activeSelf)
+                previewObject.SetActive(false);
+
+            if (uiManager != null)
+                uiManager.HideInteractText();
+
+            // Do not pick up or place anything while blocked
+            return;
+        }
+
         bool invOpen = (InventoryUI.Instance != null && InventoryUI.Instance.IsOpen);
 
         if (invOpen)
@@ -413,7 +431,6 @@ public class InteractionRaycaster : MonoBehaviour
         if (SaveManager.Instance != null)
             SaveManager.Instance.SaveGame();
 
-        // if this placement came from inventory, consume one item
         if (isPlacingFromInventory &&
             placingFromInventoryItem != null &&
             EquipManager.Instance != null)
@@ -455,7 +472,6 @@ public class InteractionRaycaster : MonoBehaviour
         {
             if (isPlacingFromInventory && returnToInventory)
             {
-                // we never removed from inventory, so just destroy the temporary clone
                 Object.Destroy(heldObject);
                 heldObject = null;
             }
@@ -473,6 +489,38 @@ public class InteractionRaycaster : MonoBehaviour
 
         if (uiManager != null)
             uiManager.HideInteractText();
+    }
+
+    // Conversation helpers
+
+    public void BlockPlacementForConversation(bool block)
+    {
+        blockPlacementFromConversation = block;
+
+        if (block)
+        {
+            if (previewObject != null && previewObject.activeSelf)
+            {
+                previewWasActiveBeforeConversation = true;
+                previewObject.SetActive(false);
+            }
+            else
+            {
+                previewWasActiveBeforeConversation = false;
+            }
+        }
+        else
+        {
+            if (previewWasActiveBeforeConversation &&
+                previewObject != null &&
+                isPlacementMode &&
+                heldObject != null)
+            {
+                previewObject.SetActive(true);
+            }
+
+            previewWasActiveBeforeConversation = false;
+        }
     }
 
     // HELPERS

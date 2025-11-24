@@ -6,16 +6,21 @@ public class InventoryUI : MonoBehaviour
 {
     public static InventoryUI Instance;
 
+    [Header("Drag & Drop")]
+    public Image dragIcon;                // Ýstersen kullanýrsýn
+    private RectTransform dragIconRect;
+
     [Header("References")]
     public Inventory inventory;
     public GameObject panel;
-    public TextMeshProUGUI[] slotTexts;   // stack textleri (sadece miktar)
+    public TextMeshProUGUI[] slotTexts;
     public Button[] slotButtons;
-    public Image[] slotIcons;             // slotlardaki item ikonlarý
+    public Image[] slotIcons;
 
-    [Header("Drag & Drop (Ghost Icon)")]
-    public Image dragIconImage;           // Canvas üzerindeki hayalet icon (Image)
-    public TextMeshProUGUI dragIconAmount;// onun üzerindeki miktar yazýsý
+    // drag visuals (ghost icon)
+    public Canvas dragCanvas;
+    public Image dragIconImage;
+    public TextMeshProUGUI dragIconAmount;
 
     [Header("Control")]
     public KeyCode toggleKey = KeyCode.Tab;
@@ -24,6 +29,10 @@ public class InventoryUI : MonoBehaviour
 
     [Header("Player Control")]
     public FPController playerController;
+
+    //  VILLAGER KONUÞMASI VS. ÝÇÝN ENVANTER KÝLÝTÝ
+    [HideInInspector]
+    public bool blockInventory = false;
 
     int draggingFromIndex = -1;
     bool isDragging = false;
@@ -42,7 +51,6 @@ public class InventoryUI : MonoBehaviour
         if (panel != null)
             panel.SetActive(false);
 
-        // Ghost icon baþlangýçta kapalý
         if (dragIconImage != null)
             dragIconImage.gameObject.SetActive(false);
 
@@ -52,7 +60,10 @@ public class InventoryUI : MonoBehaviour
 
     void Update()
     {
-        // Envanteri aç/kapat
+        //  Envanter kilitliyse hiçbir input çalýþmasýn
+        if (blockInventory)
+            return;
+
         if (Input.GetKeyDown(toggleKey))
         {
             if (isOpen)
@@ -61,7 +72,6 @@ public class InventoryUI : MonoBehaviour
                 OpenInventory();
         }
 
-        // Drag devam ederken ghost icon mouse'u takip etsin
         if (isDragging && dragIconImage != null)
         {
             dragIconImage.rectTransform.position = Input.mousePosition;
@@ -70,6 +80,8 @@ public class InventoryUI : MonoBehaviour
 
     public void OpenInventory()
     {
+        if (blockInventory) return; // güvenlik
+
         isOpen = true;
 
         if (panel != null)
@@ -97,7 +109,23 @@ public class InventoryUI : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
 
-        EndSlotDrag(); // drag varsa kapat
+        EndSlotDrag();
+    }
+
+    /// <summary>
+    /// Villager konuþmasýna girerken dýþarýdan sessizce kapatmak için:
+    /// Hareket / cursor kilidini ELLEMEZ, sadece UI’ý gizler.
+    /// </summary>
+    public void ForceCloseFromConversation()
+    {
+        if (!isOpen) return;
+
+        isOpen = false;
+
+        if (panel != null)
+            panel.SetActive(false);
+
+        EndSlotDrag();
     }
 
     public void UpdateUI()
@@ -108,7 +136,7 @@ public class InventoryUI : MonoBehaviour
         {
             var slot = inventory.slots[i];
 
-            // Miktar text'i (ör: "3")
+            // amount text
             if (slotTexts != null && i < slotTexts.Length && slotTexts[i] != null)
             {
                 if (slot.IsEmpty)
@@ -121,7 +149,7 @@ public class InventoryUI : MonoBehaviour
                 }
             }
 
-            // Icon resmi
+            // icon
             if (slotIcons != null && i < slotIcons.Length && slotIcons[i] != null)
             {
                 if (slot.IsEmpty || slot.item == null || slot.item.icon == null)
@@ -138,9 +166,8 @@ public class InventoryUI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Drag baþlarken slot handler burayý çaðýrýyor
-    /// </summary>
+    // ---------------- DRAG LOGIC ---------------- //
+
     public void BeginSlotDrag(int slotIndex)
     {
         if (inventory == null) return;
@@ -152,35 +179,27 @@ public class InventoryUI : MonoBehaviour
         draggingFromIndex = slotIndex;
         isDragging = true;
 
-        // GHOST ICON (eldeki)
         if (dragIconImage != null)
         {
+            dragIconImage.gameObject.SetActive(true);
             dragIconImage.sprite = slot.item.icon;
             dragIconImage.enabled = (slot.item.icon != null);
             dragIconImage.rectTransform.position = Input.mousePosition;
-            dragIconImage.gameObject.SetActive(true);
         }
 
         if (dragIconAmount != null)
         {
+            dragIconAmount.gameObject.SetActive(true);
             dragIconAmount.text = slot.amount > 1 ? slot.amount.ToString() : "";
-            dragIconAmount.gameObject.SetActive(!string.IsNullOrEmpty(dragIconAmount.text));
         }
 
-        // Kaynaktaki slotu görsel olarak boþalt
-        if (slotIcons != null && slotIndex < slotIcons.Length && slotIcons[slotIndex] != null)
+        // slot içindeki görsel geçici kaybolsun
+        if (slotIcons != null && draggingFromIndex < slotIcons.Length && slotIcons[draggingFromIndex] != null)
         {
-            slotIcons[slotIndex].sprite = null;
-            slotIcons[slotIndex].enabled = false;
-        }
-
-        if (slotTexts != null && slotIndex < slotTexts.Length && slotTexts[slotIndex] != null)
-        {
-            slotTexts[slotIndex].text = "";
+            slotIcons[draggingFromIndex].enabled = false;
         }
     }
 
-    
     public void DragIconFollowMouse()
     {
         if (!isDragging || dragIconImage == null) return;
@@ -189,8 +208,8 @@ public class InventoryUI : MonoBehaviour
 
     public void EndSlotDrag()
     {
-        // Drag bitti
         isDragging = false;
+        draggingFromIndex = -1;
 
         if (dragIconImage != null)
             dragIconImage.gameObject.SetActive(false);
@@ -198,12 +217,9 @@ public class InventoryUI : MonoBehaviour
         if (dragIconAmount != null)
             dragIconAmount.gameObject.SetActive(false);
 
-        // draggingFromIndex'i sýfýrla
-        draggingFromIndex = -1;
-
+        // bütün slotlarý güncelle, kaybolan iconlar geri gelsin
         UpdateUI();
     }
-
 
     public void DropOnSlot(int targetIndex)
     {
@@ -212,16 +228,15 @@ public class InventoryUI : MonoBehaviour
         if (draggingFromIndex < 0) return;
 
         if (targetIndex < 0 || targetIndex >= inventory.slots.Count)
+        {
+            EndSlotDrag();
+            UpdateUI();
             return;
+        }
 
-        // Ayný slota býrakýyorsa envanterde deðiþiklik yok
-        if (targetIndex == draggingFromIndex)
-            return;
-
-        
         Inventory.Instance.SwapSlots(draggingFromIndex, targetIndex);
 
-        // UI yenilemeyi ve drag'i bitirmeyi OnEndDrag/EndSlotDrag yapacak
+        EndSlotDrag();
+        UpdateUI();
     }
-
 }
