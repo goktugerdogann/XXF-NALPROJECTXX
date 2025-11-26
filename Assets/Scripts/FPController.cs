@@ -12,8 +12,9 @@ public class FPController : MonoBehaviour
     [HideInInspector]
     public bool freezeMovement = false;
 
+
     [Header("Look")]
-    public float mouseSensitivity = 1.2f;     // Genel hassasiyet çarpaný
+    public float mouseSensitivity = 1.2f;     // Genel hassasiyet carpani
     public float lookXMultiplier = 1f;        // Yaw
     public float lookYMultiplier = 1f;        // Pitch
     public float pitchMin = -85f;
@@ -32,14 +33,14 @@ public class FPController : MonoBehaviour
     public float airControl = 0.5f;           // Havada yatay kontrol
     public float gravity = -20f;
     public float jumpHeight = 1.2f;
-    public float coyoteTime = 0.12f;          // Yerden kesildikten sonra kýsa süre zýplamaya izin
-    public float jumpBuffer = 0.12f;          // Zýplama tuþunu erken basmayý tamponlar
+    public float coyoteTime = 0.12f;          // Yerden kesildikten sonra kisa sure ziplamaya izin
+    public float jumpBuffer = 0.12f;          // Ziplamayi erken basmayi tamponlar
 
     [Header("Grounding")]
     public LayerMask groundMask;
-    public float groundCheckRadius = 0.28f;   // Çizimde kullanýlýyor ama aþaðýda bounds’tan dinamik hesaplýyoruz
-    public float groundCheckOffset = 0.1f;    // (Gizmos için kaldý)
-    public float slopeSlideGravity = -35f;    // çok dik yamaçta hafif kayma
+    public float groundCheckRadius = 0.28f;   // Cizimde kullaniliyor ama asagida bounds tan dinamik hesaplaniyor
+    public float groundCheckOffset = 0.1f;    // (Gizmos icin kaldi)
+    public float slopeSlideGravity = -35f;    // cok dik yamacta hafif kayma
 
     [Header("Crouch")]
     public KeyCode crouchToggleFallback = KeyCode.LeftControl;
@@ -53,8 +54,14 @@ public class FPController : MonoBehaviour
     public float bobAmplitude = 0.04f;
 
     [Header("Controller Tuning")]
-    public bool autoCenter = true;      // CC center’ý otomatik ayarlansýn mý?
-    public bool bottomAnchored = true;  // true: tabaný sabit tut (height deðiþse de ayak yerde kalsýn)
+    public bool autoCenter = true;      // CharacterController center otomatik ayarlansin mi
+    public bool bottomAnchored = true;  // true: tabani sabit tut (height degisse de ayak yerde kalsin)
+
+    [Header("Climb Settings")]
+    public LayerMask climbableLayers;       // Tirmanilabilir objelerin layer lari
+    public float maxClimbRemaining = 2f;    // Kalan yukseklik bunun ustundeyse tirmanma
+    public float climbForwardOffset = 0.1f; // Tirmanirken ileri dogru hafif itme
+    public float climbTime = 0.25f;         // Tirmanma animasyon suresi
 
     // Internal
     private float _pitch;
@@ -67,11 +74,13 @@ public class FPController : MonoBehaviour
     private bool _jumpQueued = false;
     private float _bobTimer;
     private Vector3 _camLocalDefault;
-    private float _baseBottomY = 0f;          // center.y - height/2 (taban referansý)
+    private float _baseBottomY = 0f;          // center.y - height/2 (taban referansi)
     private float yVelocity = 0f;
     private bool _headBobJustStarted = true;
     bool firstmove = true;
-    
+
+    private bool isClimbing = false;
+
 #if ENABLE_INPUT_SYSTEM
     private Keyboard kb => Keyboard.current;
     private Mouse ms => Mouse.current;
@@ -80,39 +89,43 @@ public class FPController : MonoBehaviour
     void Awake()
     {
         controller = GetComponent<CharacterController>();
-        if (cameraPivot == null && Camera.main != null) cameraPivot = Camera.main.transform;
-        if (cameraPivot != null) _camLocalDefault = cameraPivot.localPosition;
 
-        // taban referansýný al (Inspector’daki mevcut center/height üzerinden)
+        if (cameraPivot == null && Camera.main != null)
+            cameraPivot = Camera.main.transform;
+        if (cameraPivot != null)
+            _camLocalDefault = cameraPivot.localPosition;
+
         _baseBottomY = controller.center.y - controller.height * 0.5f;
 
         if (lockCursorOnStart) LockCursor(true);
     }
 
+
     void Update()
     {
-        // Envanter açýksa sadece movement çalýþsýn, mouse-look çalýþmasýn
         if (!IsInventoryOpen && !freezeMovement)
         {
             HandleLook();
         }
 
-
         HandleCrouch();
 
-        // Jump inputu kuyrukla (auto zýplamayý keser)
-        if (JumpPressedThisFrame())
+        if (!isClimbing && JumpPressedThisFrame())
         {
             _jumpQueued = true;
             _lastJumpPressedTime = Time.time;
         }
 
-        HandleMovement();
+        if (!isClimbing)
+        {
+            HandleMovement();
+        }
+
         HandleHeadBob();
         HandleCursorToggle();
     }
 
-    // FPController içinde, deðiþkenlerin oraya ekle
+    // FPController icinde, degiskenlerin oraya ekle
     bool IsInventoryOpen
     {
         get
@@ -211,8 +224,8 @@ public class FPController : MonoBehaviour
         if (freezeMovement)
             return false;
 #if ENABLE_INPUT_SYSTEM
-    if (kb != null)
-        return kb.leftCtrlKey.isPressed;
+        if (kb != null)
+            return kb.leftCtrlKey.isPressed;
 #endif
         return Input.GetKey(KeyCode.LeftControl);
     }
@@ -222,7 +235,9 @@ public class FPController : MonoBehaviour
     #region Movement
     void HandleMovement()
     {
-        // Ground check: bounds tabanýndan dinamik yarýçapla
+        if (isClimbing) return;
+
+        // Ground check: bounds tabanindan dinamik yaricapla
         Bounds b = controller.bounds;
         Vector3 feet = b.center + Vector3.down * (b.extents.y - 0.02f);
         float dynRadius = Mathf.Max(0.18f, controller.radius * 0.6f);
@@ -230,16 +245,16 @@ public class FPController : MonoBehaviour
 
         if (_isGrounded) _lastGroundedTime = Time.time;
 
-        // Hedef hýz (state’e göre)
+        // Hedef hiz (state e gore)
         _isSprinting = SprintHeld() && !_isCrouching;
         float desiredSpeed = _isCrouching ? crouchSpeed : (_isSprinting ? sprintSpeed : walkSpeed);
 
-        // Yatay hedef vektör
+        // Yatay hedef vektor
         Vector2 input = GetMoveInput();
         Vector3 inputWorld = transform.TransformDirection(new Vector3(input.x, 0f, input.y));
         Vector3 desiredHorizontal = inputWorld.normalized * desiredSpeed;
 
-        // Ývmelenme / Frenleme
+        // Ivmelenme / Frenleme
         float accel = _isGrounded ? acceleration : acceleration * airControl;
         float decel = _isGrounded ? deceleration : deceleration * 0.5f;
 
@@ -254,17 +269,17 @@ public class FPController : MonoBehaviour
 
         currentHorizontal += change;
 
-        // Slope’a uydur
+        // Slope a uydur
         currentHorizontal = ProjectOnGround(currentHorizontal);
 
-        // Y ekseni/yer çekimi
+        // Y ekseni / yer cekimi
         if (_isGrounded && _velocity.y < 0f) _velocity.y = -2f;
         else _velocity.y += gravity * Time.deltaTime;
 
-        // Jump buffer & coyote time (kuyruklu)
+        // Jump buffer ve coyote time
         bool canJump =
             _jumpQueued &&
-            Time.timeSinceLevelLoad >= 0.1f &&                                    // açýlýþta yanlýþ tetiklemeyi engelle
+            Time.timeSinceLevelLoad >= 0.1f &&
             (Time.time - _lastGroundedTime) <= coyoteTime &&
             (Time.time - _lastJumpPressedTime) <= jumpBuffer;
 
@@ -276,14 +291,14 @@ public class FPController : MonoBehaviour
             _velocity.y = Mathf.Sqrt(-2f * gravity * jumpHeight);
         }
 
-        // Çok dik slope’ta hafif kayma
+        // Cok dik slope ta hafif kayma
         if (!_isGrounded && IsOnSteepSlope(out Vector3 steepNormal))
         {
             Vector3 steepDown = Vector3.ProjectOnPlane(Vector3.down, steepNormal).normalized;
             currentHorizontal += steepDown * (Mathf.Abs(slopeSlideGravity) * 0.2f * Time.deltaTime);
         }
 
-        // Birleþtir ve uygula
+        // Birlestir ve uygula
         _velocity.x = currentHorizontal.x;
         _velocity.z = currentHorizontal.z;
 
@@ -317,17 +332,102 @@ public class FPController : MonoBehaviour
     }
     #endregion
 
+    #region Climb
+
+    private void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        if (isClimbing) return;
+        if (freezeMovement) return;
+
+        // Only climbable layers
+        if ((climbableLayers.value & (1 << hit.gameObject.layer)) == 0)
+            return;
+
+        // Only when moving upward
+        if (_velocity.y <= 0f)
+            return;
+
+        TryStartClimb(hit);
+    }
+
+    private void TryStartClimb(ControllerColliderHit hit)
+    {
+        Collider col = hit.collider;
+
+        float topY = col.bounds.max.y;
+        float contactY = hit.point.y;
+        float remaining = topY - contactY;
+
+        // Already at or above top
+        if (remaining <= 0f)
+            return;
+
+        // Too high to climb
+        if (remaining > maxClimbRemaining)
+            return;
+
+        float playerHalfHeight = transform.localScale.y * 0.5f;
+        float climbUp = remaining + playerHalfHeight;
+
+        Vector3 targetPos = transform.position;
+        targetPos.y += climbUp;
+
+        Vector3 forward = cameraPivot != null ? cameraPivot.forward : transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude > 0.0001f)
+            forward.Normalize();
+
+        targetPos += forward * climbForwardOffset;
+
+        StartCoroutine(ClimbRoutine(targetPos));
+    }
+
+    private System.Collections.IEnumerator ClimbRoutine(Vector3 targetPos)
+    {
+        isClimbing = true;
+        freezeMovement = true;
+
+        Vector3 startPos = transform.position;
+        Vector3 oldVelocity = _velocity;
+        _velocity = Vector3.zero;
+
+        float t = 0f;
+
+        while (t < climbTime)
+        {
+            t += Time.deltaTime;
+            float lerp = Mathf.Clamp01(t / climbTime);
+
+            Vector3 newPos = Vector3.Lerp(startPos, targetPos, lerp);
+            Vector3 delta = newPos - transform.position;
+            controller.Move(delta);
+
+            yield return null;
+        }
+
+        Vector3 finalDelta = targetPos - transform.position;
+        controller.Move(finalDelta);
+
+        _velocity = oldVelocity;
+        _velocity.y = 0f;
+
+        isClimbing = false;
+        freezeMovement = false;
+    }
+
+    #endregion
+
     #region Crouch
     void HandleCrouch()
     {
-        // Basýlý tutma sistemi
+        // Basil tutulma sistemi
         if (CrouchHeld())
         {
             _isCrouching = true;
         }
         else
         {
-            // Ayaða kalkmadan önce üstte engel var mý kontrol et
+            // Ayaga kalkmadan once uste engel var mi kontrol et
             if (CanStandUp())
                 _isCrouching = false;
         }
@@ -345,7 +445,7 @@ public class FPController : MonoBehaviour
             controller.center = new Vector3(0f, newCenterY, 0f);
         }
 
-        // Kamera yüksekliði
+        // Kamera yuksekligi
         if (cameraPivot != null)
         {
             float camTargetY = (_isCrouching ? 0.85f : 1.2f);
@@ -380,12 +480,11 @@ public class FPController : MonoBehaviour
 
             if (firstmove)
             {
-                //  Ýlk hareket fazý: birkaç frame boyunca SmoothDamp çalýþsýn
                 float smoothY = Mathf.SmoothDamp(
                     cameraPivot.localPosition.y,
                     targetY,
                     ref yVelocity,
-                    0.08f // smooth süresi
+                    0.08f
                 );
 
                 cameraPivot.localPosition = new Vector3(
@@ -394,11 +493,9 @@ public class FPController : MonoBehaviour
                     _camLocalDefault.z
                 );
 
-                // Hedefe yeterince yaklaþtý mý? Artýk normal moda geç
                 if (Mathf.Abs(smoothY - targetY) < 0.001f)
                 {
                     firstmove = false;
-                    // Ýstersen hizaya tam oturt:
                     cameraPivot.localPosition = new Vector3(
                         _camLocalDefault.x,
                         targetY,
@@ -408,7 +505,6 @@ public class FPController : MonoBehaviour
             }
             else
             {
-                //  Sonraki tüm framelerde anýnda bob
                 cameraPivot.localPosition = new Vector3(
                     _camLocalDefault.x,
                     targetY,
@@ -418,7 +514,6 @@ public class FPController : MonoBehaviour
         }
         else
         {
-            //  Durunca resetle
             firstmove = true;
             yVelocity = 0f;
             _bobTimer = 0f;
@@ -440,21 +535,11 @@ public class FPController : MonoBehaviour
         if (IsInventoryOpen)
             return;
 #if ENABLE_INPUT_SYSTEM
-    // ESC ile kilidi aç
-    if (kb != null && kb.escapeKey.wasPressedThisFrame)
-        LockCursor(false);
-
-    //  Sol týkla tekrar kilitleyen satýrý SÝLDÝK
-    // if (kb != null && ms != null && ms.leftButton.wasPressedThisFrame && !Cursor.lockState.Equals(CursorLockMode.Locked))
-    //     LockCursor(true);
+        if (kb != null && kb.escapeKey.wasPressedThisFrame)
+            LockCursor(false);
 #else
-        // ESC ile kilidi aç
         if (Input.GetKeyDown(KeyCode.Escape))
             LockCursor(false);
-
-        //  Eski sol týk lock satýrý:
-        // if (Input.GetMouseButtonDown(0) && Cursor.lockState != CursorLockMode.Locked) 
-        //     LockCursor(true);
 #endif
     }
 
