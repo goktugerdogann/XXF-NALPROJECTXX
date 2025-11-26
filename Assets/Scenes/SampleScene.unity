@@ -2208,6 +2208,18 @@ MonoBehaviour:
   interactionKey: 101
   playerObject: {fileID: 450252351}
   trainController: {fileID: 618833788}
+--- !u!114 &618833797
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 618833787}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1d67e1fceabd344f8d58f481335e3b3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &648339453
 GameObject:
   m_ObjectHideFlags: 0
@@ -7662,6 +7674,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2983789124782316547, guid: f0ec5ea40f9150e4ba0109641a8a7652, type: 3}
       insertIndex: -1
       addedObject: {fileID: 618833793}
+    - targetCorrespondingSourceObject: {fileID: 2983789124782316547, guid: f0ec5ea40f9150e4ba0109641a8a7652, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 618833797}
   m_SourcePrefab: {fileID: 100100000, guid: f0ec5ea40f9150e4ba0109641a8a7652, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
