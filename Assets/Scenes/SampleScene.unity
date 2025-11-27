@@ -1852,9 +1852,9 @@ MonoBehaviour:
   climbableLayers:
     serializedVersion: 2
     m_Bits: 256
-  maxClimbRemaining: 2
+  maxClimbRemaining: 3
   climbForwardOffset: 0.1
-  climbTime: 0.25
+  climbTime: 1.2
 --- !u!143 &450252359
 CharacterController:
   m_ObjectHideFlags: 0

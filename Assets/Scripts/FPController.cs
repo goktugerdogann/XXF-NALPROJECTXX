@@ -125,7 +125,6 @@ public class FPController : MonoBehaviour
         HandleCursorToggle();
     }
 
-    // FPController icinde, degiskenlerin oraya ekle
     bool IsInventoryOpen
     {
         get
@@ -142,10 +141,8 @@ public class FPController : MonoBehaviour
         Vector2 lookDelta = GetLookDelta();
         float invert = invertY ? 1f : -1f;
 
-        // Yaw
         transform.Rotate(Vector3.up, lookDelta.x * mouseSensitivity * lookXMultiplier);
 
-        // Pitch
         _pitch += lookDelta.y * mouseSensitivity * lookYMultiplier * invert;
         _pitch = Mathf.Clamp(_pitch, pitchMin, pitchMax);
 
@@ -237,7 +234,6 @@ public class FPController : MonoBehaviour
     {
         if (isClimbing) return;
 
-        // Ground check: bounds tabanindan dinamik yaricapla
         Bounds b = controller.bounds;
         Vector3 feet = b.center + Vector3.down * (b.extents.y - 0.02f);
         float dynRadius = Mathf.Max(0.18f, controller.radius * 0.6f);
@@ -245,38 +241,59 @@ public class FPController : MonoBehaviour
 
         if (_isGrounded) _lastGroundedTime = Time.time;
 
-        // Hedef hiz (state e gore)
         _isSprinting = SprintHeld() && !_isCrouching;
         float desiredSpeed = _isCrouching ? crouchSpeed : (_isSprinting ? sprintSpeed : walkSpeed);
 
-        // Yatay hedef vektor
         Vector2 input = GetMoveInput();
         Vector3 inputWorld = transform.TransformDirection(new Vector3(input.x, 0f, input.y));
         Vector3 desiredHorizontal = inputWorld.normalized * desiredSpeed;
+        float desiredMag = desiredHorizontal.magnitude;
+        bool hasInput = desiredMag > 0.01f;
 
-        // Ivmelenme / Frenleme
         float accel = _isGrounded ? acceleration : acceleration * airControl;
         float decel = _isGrounded ? deceleration : deceleration * 0.5f;
 
         Vector3 currentHorizontal = new Vector3(_velocity.x, 0f, _velocity.z);
 
-        Vector3 diff = desiredHorizontal - currentHorizontal;
-        Vector3 change;
-        if (desiredHorizontal.sqrMagnitude > 0.01f)
-            change = Vector3.ClampMagnitude(diff, accel * Time.deltaTime);
+        // --- Direction change and braking tweak (less sliding) ---
+        if (hasInput && currentHorizontal.sqrMagnitude > 0.0001f)
+        {
+            Vector3 curNorm = currentHorizontal.normalized;
+            Vector3 desiredNorm = desiredHorizontal.normalized;
+            float dot = Vector3.Dot(curNorm, desiredNorm);
+
+            // If we are trying to move in almost opposite direction, apply strong brake first
+            if (dot < 0f)
+            {
+                float reverseMult = _isGrounded ? 2.5f : 1.2f; // stronger on ground, softer in air
+                float brake = decel * reverseMult;
+                Vector3 brakeStep = Vector3.ClampMagnitude(-currentHorizontal, brake * Time.deltaTime);
+                currentHorizontal += brakeStep;
+            }
+        }
+
+        // Normal accel / decel
+        if (hasInput)
+        {
+            Vector3 diff = desiredHorizontal - currentHorizontal;
+            Vector3 change = Vector3.ClampMagnitude(diff, accel * Time.deltaTime);
+            currentHorizontal += change;
+        }
         else
-            change = Vector3.ClampMagnitude(-currentHorizontal, decel * Time.deltaTime);
+        {
+            Vector3 change = Vector3.ClampMagnitude(-currentHorizontal, decel * Time.deltaTime);
+            currentHorizontal += change;
 
-        currentHorizontal += change;
+            // Small deadzone so we do not drift forever with tiny velocity
+            if (currentHorizontal.magnitude < 0.05f)
+                currentHorizontal = Vector3.zero;
+        }
 
-        // Slope a uydur
         currentHorizontal = ProjectOnGround(currentHorizontal);
 
-        // Y ekseni / yer cekimi
         if (_isGrounded && _velocity.y < 0f) _velocity.y = -2f;
         else _velocity.y += gravity * Time.deltaTime;
 
-        // Jump buffer ve coyote time
         bool canJump =
             _jumpQueued &&
             Time.timeSinceLevelLoad >= 0.1f &&
@@ -291,14 +308,12 @@ public class FPController : MonoBehaviour
             _velocity.y = Mathf.Sqrt(-2f * gravity * jumpHeight);
         }
 
-        // Cok dik slope ta hafif kayma
         if (!_isGrounded && IsOnSteepSlope(out Vector3 steepNormal))
         {
             Vector3 steepDown = Vector3.ProjectOnPlane(Vector3.down, steepNormal).normalized;
             currentHorizontal += steepDown * (Mathf.Abs(slopeSlideGravity) * 0.2f * Time.deltaTime);
         }
 
-        // Birlestir ve uygula
         _velocity.x = currentHorizontal.x;
         _velocity.z = currentHorizontal.z;
 
@@ -339,12 +354,16 @@ public class FPController : MonoBehaviour
         if (isClimbing) return;
         if (freezeMovement) return;
 
-        // Only climbable layers
+        // Sadece tirmanilabilir layer
         if ((climbableLayers.value & (1 << hit.gameObject.layer)) == 0)
             return;
 
-        // Only when moving upward
-        if (_velocity.y <= 0f)
+        // Tirmanma sadece dususte calissin (tepeyi gectikten sonra)
+        if (_velocity.y >= 0f)
+            return;
+
+        // Hala grounded ise (duvara surtunurken) tirmanma baslatma
+        if (_isGrounded)
             return;
 
         TryStartClimb(hit);
@@ -358,11 +377,9 @@ public class FPController : MonoBehaviour
         float contactY = hit.point.y;
         float remaining = topY - contactY;
 
-        // Already at or above top
         if (remaining <= 0f)
             return;
 
-        // Too high to climb
         if (remaining > maxClimbRemaining)
             return;
 
@@ -420,14 +437,12 @@ public class FPController : MonoBehaviour
     #region Crouch
     void HandleCrouch()
     {
-        // Basil tutulma sistemi
         if (CrouchHeld())
         {
             _isCrouching = true;
         }
         else
         {
-            // Ayaga kalkmadan once uste engel var mi kontrol et
             if (CanStandUp())
                 _isCrouching = false;
         }
@@ -445,7 +460,6 @@ public class FPController : MonoBehaviour
             controller.center = new Vector3(0f, newCenterY, 0f);
         }
 
-        // Kamera yuksekligi
         if (cameraPivot != null)
         {
             float camTargetY = (_isCrouching ? 0.85f : 1.2f);
