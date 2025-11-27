@@ -22,6 +22,11 @@ public class TrainController : MonoBehaviour
     [Header("1860s Buhar Kontrolü")]
     [Tooltip("Reverser/Cut-Off kolu pozisyonu. -1.0 (Tam Geri) ile 1.0 (Tam İleri) arası.")]
     public float reverserInput = 1.0f;
+    
+    private Vector3 previousPosition;
+    [HideInInspector] // Inspector'da gözükmesini istemiyorsak
+    public Vector3 deltaPosition;
+        
     // --- TEMEL GİRİŞ YÖNETİMİ ---
     void Update()
     {
@@ -134,7 +139,12 @@ public class TrainController : MonoBehaviour
         // **ÖNEMLİ:** Bu, basit düz bir hareket sağlar. Ray takibi için bu satır daha karmaşık olacaktır.
         transform.position += transform.forward * currentSpeed * Time.fixedDeltaTime;
     }
-
+    
+    void Start()
+    {
+        // Başlangıç pozisyonunu kaydet
+        previousPosition = transform.position;
+    }
     // Harici sistemlerin (örn. UI) hızı okuması için basit bir metod.
     public float GetCurrentSpeed()
     {
