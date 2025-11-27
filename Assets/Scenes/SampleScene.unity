@@ -1855,6 +1855,10 @@ MonoBehaviour:
   maxClimbRemaining: 3
   climbForwardOffset: 0.1
   climbTime: 1.2
+  enableClimbCameraAnimation: 1
+  climbForwardLean: -10
+  climbShakeAmount: 0.01
+  climbMaxPitchAngle: 45
 --- !u!143 &450252359
 CharacterController:
   m_ObjectHideFlags: 0
@@ -2195,6 +2199,7 @@ MonoBehaviour:
   currentSpeed: 0
   isControlledByPlayer: 0
   reverserInput: 1
+  deltaPosition: {x: 0, y: 0, z: 0}
 --- !u!4 &618833792 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 18343270595567240, guid: f0ec5ea40f9150e4ba0109641a8a7652, type: 3}
