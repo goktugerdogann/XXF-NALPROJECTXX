@@ -4,45 +4,48 @@ public class PlatformingSurface : MonoBehaviour
 {
     private const string PlayerTag = "Player";
     private TrainController trainController;
-    private CharacterController playerCC; // Oyuncunun CC referansı
+    private CharacterController playerCC; 
+    
+    // YENİ EK: Player'ı tutmak yerine direkt CC'yi tutalım.
+    private bool playerIsOnPlatform = false; 
 
     private void Start()
     {
-        // TrainController'a erişim sağlayın
+        // TrainController'ı güvenli bir şekilde al.
         trainController = GetComponentInParent<TrainController>(); 
-        
-        if (trainController == null)
-        {
-            Debug.LogError("PlatformingSurface, TrainController'ı bulamadı!");
-        }
     }
 
-    // Oyuncu yüzeyin üzerinde durduğu sürece çalışır
-    private void OnTriggerStay(Collider other) 
+    private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag(PlayerTag))
         {
-            // Oyuncunun CC'sini bir kez al
-            if (playerCC == null)
-            {
-                playerCC = other.GetComponent<CharacterController>();
-            }
-
+            playerCC = other.GetComponent<CharacterController>();
             if (playerCC != null)
             {
-                // TREN HAREKETİNİ OYUNCUYA MANUEL UYGULA
-                // CharacterController'ın kendi Move metodunu kullanmak zorundayız.
-                playerCC.Move(trainController.deltaPosition);
+                playerIsOnPlatform = true;
             }
         }
     }
 
-    // Oyuncu yüzeyden çıktığında (isteğe bağlı, ama temizlik için iyidir)
     private void OnTriggerExit(Collider other)
     {
         if (other.CompareTag(PlayerTag))
         {
+            playerIsOnPlatform = false;
             playerCC = null;
+        }
+    }
+    
+    // TREN HAREKETİNİ UYGULAMA (Tüm hareketler bittikten sonra)
+    private void LateUpdate()
+    {
+        if (playerIsOnPlatform && playerCC != null && trainController != null)
+        {
+            Vector3 movement = trainController.deltaPosition;
+            
+            // CC'ye hareketi uygula
+            // Bu, oyuncunun kendi hareketine ek olarak uygulanır.
+            playerCC.Move(movement); 
         }
     }
 }
