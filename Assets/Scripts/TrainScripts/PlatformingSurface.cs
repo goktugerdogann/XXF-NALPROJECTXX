@@ -1,51 +1,61 @@
+using System;
 using UnityEngine;
-
 public class PlatformingSurface : MonoBehaviour
 {
     private const string PlayerTag = "Player";
     private TrainController trainController;
-    private CharacterController playerCC; 
-    
-    // YENİ EK: Player'ı tutmak yerine direkt CC'yi tutalım.
-    private bool playerIsOnPlatform = false; 
+    private FPController playerFPController;
+    private Vector3 lastTrainPos;
 
     private void Start()
     {
-        // TrainController'ı güvenli bir şekilde al.
-        trainController = GetComponentInParent<TrainController>(); 
+        trainController = GetComponentInParent<TrainController>();
+        if (trainController != null)
+            lastTrainPos = trainController.transform.position;
+    }
+
+    private void Update()
+    {
+        if (trainController == null) return;
+
+        // Frame-bazlı delta (world-space)
+        Vector3 current = trainController.transform.position;
+        Vector3 deltaThisFrame = current - lastTrainPos;
+        lastTrainPos = current;
+
+        if (playerFPController != null && playerFPController.isOnMovingPlatform)
+        {
+            // DOĞRU: frame delta ver (NOT velocity)
+            playerFPController.platformMoveDelta = deltaThisFrame;
+        }
     }
 
     private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag(PlayerTag))
-        {
-            playerCC = other.GetComponent<CharacterController>();
-            if (playerCC != null)
-            {
-                playerIsOnPlatform = true;
-            }
-        }
+            playerFPController = other.GetComponent<FPController>();
     }
 
     private void OnTriggerExit(Collider other)
     {
-        if (other.CompareTag(PlayerTag))
+        if (other.CompareTag(PlayerTag) && playerFPController != null)
         {
-            playerIsOnPlatform = false;
-            playerCC = null;
+            playerFPController.isOnMovingPlatform = false;
+            playerFPController.platformMoveDelta = Vector3.zero;
+            playerFPController = null;
         }
     }
-    
-    // TREN HAREKETİNİ UYGULAMA (Tüm hareketler bittikten sonra)
-    private void LateUpdate()
+
+    private void OnTriggerStay(Collider other)
     {
-        if (playerIsOnPlatform && playerCC != null && trainController != null)
+        if (!other.CompareTag(PlayerTag)) return;
+
+        var fp = other.GetComponent<FPController>();
+        if (fp != null)
         {
-            Vector3 movement = trainController.deltaPosition;
-            
-            // CC'ye hareketi uygula
-            // Bu, oyuncunun kendi hareketine ek olarak uygulanır.
-            playerCC.Move(movement); 
+            fp.isOnMovingPlatform = true;
+            // platformMoveDelta artık Update tarafından set edilecek
+            playerFPController = fp;
         }
     }
 }

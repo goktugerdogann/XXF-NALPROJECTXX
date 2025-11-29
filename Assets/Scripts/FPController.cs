@@ -8,7 +8,8 @@ public class FPController : MonoBehaviour
 {
     [Header("References")]
     public Transform cameraPivot; // Usually Main Camera
-    private CharacterController controller;
+
+    public CharacterController controller;
     [HideInInspector]
     public bool freezeMovement = false;
 
@@ -73,6 +74,11 @@ public class FPController : MonoBehaviour
     [Tooltip("Max absolute pitch angle allowed to start a climb (degrees).")]
     public float climbMaxPitchAngle = 45f;
 
+    [HideInInspector] 
+    public bool isOnMovingPlatform = false; 
+    [HideInInspector] 
+    public Vector3 platformMoveDelta = Vector3.zero; // Trenin anlık hareket vektörü
+    
     // Internal
     private float _pitch;
     private Vector3 _velocity; // world-space
@@ -326,7 +332,28 @@ public class FPController : MonoBehaviour
         _velocity.x = currentHorizontal.x;
         _velocity.z = currentHorizontal.z;
 
-        controller.Move(_velocity * Time.deltaTime);
+      //controller.Move(_velocity * Time.deltaTime); //Tren hareketi için kaldırılan kod.
+      // YENİ: Oyuncunun tüm hareketini hesapla
+      Vector3 playerMovement = _velocity * Time.deltaTime; 
+
+      // YENİ KOD BLOĞU: Platform Üzerinde Durma ve Hareket Etme Kontrolü
+      if (isOnMovingPlatform)
+      {
+          // BİREBİR platform delta zaten frame-bazlı world-space delta (trainPos - lastTrainPos).
+          // 1) Yerçekimini yok sayma / hafif snap
+          _velocity.y = -1f;
+
+          // 2) Grounded kaybını önle (platform üzerindeyken kendini grounded say)
+          _isGrounded = true;
+          _lastGroundedTime = Time.time;
+
+          // 3) Platform delta (world-space) doğrudan playerMovement'e ekle.
+          // NOT: platformMoveDelta bir 'delta position' (metre/frame) olmalı. Eğer train velocity veriyorsa çarp Time.deltaTime.
+          playerMovement += platformMoveDelta;
+      }
+
+      // SON TAŞIMA KOMUTU:
+      controller.Move(playerMovement);
     }
 
     Vector3 ProjectOnGround(Vector3 vec)
