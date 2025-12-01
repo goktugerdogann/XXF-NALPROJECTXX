@@ -72,7 +72,9 @@ public class FPController : MonoBehaviour
 
     [Header("Climb Angle Limit")]
     [Tooltip("Max absolute pitch angle allowed to start a climb (degrees).")]
-    public float climbMaxPitchAngle = 45f;
+    [Header("Climb Angle Limits")]
+    public float climbPitchMin = -45f;   // En aşşağı bakış limiti
+    public float climbPitchMax = 45f;    // En yukarı bakış limiti
 
     [HideInInspector] 
     public bool isOnMovingPlatform = false; 
@@ -94,6 +96,8 @@ public class FPController : MonoBehaviour
     private float yVelocity = 0f;
     private bool _headBobJustStarted = true;
     bool firstmove = true;
+    public float climbPhase1TargetPitch = 40f; // desired pitch at end of phase 1
+
 
     private bool isClimbing = false;
 
@@ -106,8 +110,10 @@ public class FPController : MonoBehaviour
     {
         controller = GetComponent<CharacterController>();
 
-        if (cameraPivot == null && Camera.main != null)
-            cameraPivot = Camera.main.transform;
+        // cameraPivot'u sadece Inspector'dan veriyoruz
+        // if (cameraPivot == null && Camera.main != null)
+        //     cameraPivot = Camera.main.transform;
+
         if (cameraPivot != null)
             _camLocalDefault = cameraPivot.localPosition;
 
@@ -361,6 +367,8 @@ public class FPController : MonoBehaviour
         if (GetGround(out RaycastHit hit))
             return Vector3.ProjectOnPlane(vec, hit.normal);
         return vec;
+        
+
     }
 
     bool GetGround(out RaycastHit hit)
@@ -387,18 +395,18 @@ public class FPController : MonoBehaviour
 
     private void OnControllerColliderHit(ControllerColliderHit hit)
     {
-        if (isClimbing) return;
-        if (freezeMovement) return;
+        if (isClimbing || freezeMovement)
+            return;
 
         // Only climbable layers
         if ((climbableLayers.value & (1 << hit.gameObject.layer)) == 0)
             return;
 
-        // Only when falling
+        // Only climb when falling
         if (_velocity.y >= 0f)
             return;
 
-        // If still grounded, do not start climb
+        // Do not start climb if still grounded
         if (_isGrounded)
             return;
 
@@ -407,8 +415,11 @@ public class FPController : MonoBehaviour
 
     private void TryStartClimb(ControllerColliderHit hit)
     {
-        // Do not climb if camera pitch is too extreme (looking too far up or down)
-        if (Mathf.Abs(_pitch) > climbMaxPitchAngle)
+        // Normalize pitch to -180..180
+        float pitch = NormalizeAngle(_pitch);
+
+        // Cancel climb if pitch is outside allowed range
+        if (pitch < climbPitchMin || pitch > climbPitchMax)
             return;
 
         Collider col = hit.collider;
@@ -420,6 +431,7 @@ public class FPController : MonoBehaviour
         if (remaining <= 0f)
             return;
 
+        // Do not allow climbing if the ledge is too high
         if (remaining > maxClimbRemaining)
             return;
 
@@ -429,6 +441,7 @@ public class FPController : MonoBehaviour
         Vector3 targetPos = transform.position;
         targetPos.y += climbUp;
 
+        // Small forward offset on top
         Vector3 forward = cameraPivot != null ? cameraPivot.forward : transform.forward;
         forward.y = 0f;
         if (forward.sqrMagnitude > 0.0001f)
@@ -451,27 +464,38 @@ public class FPController : MonoBehaviour
         // Camera local state at climb start
         Vector3 camStartLocalPos = cameraPivot != null ? cameraPivot.localPosition : Vector3.zero;
         Vector3 camStartLocalEuler = cameraPivot != null ? cameraPivot.localEulerAngles : Vector3.zero;
-        float startPitch = camStartLocalEuler.x;
 
-        // Disable controller during climb to avoid jitter
+        // Start pitch normalized
+        float startPitch = NormalizeAngle(camStartLocalEuler.x);
+
+        // How far from start to target at end of phase 1
+        float phase1Delta = climbPhase1TargetPitch - startPitch;
+
+        // Controller off during climb to avoid jitter
         controller.enabled = false;
 
-        // Phase setup (fixed ratios)
-        const float phase1End = 1f / 3f; // slow start up
-        const float phase2End = 2f / 3f; // lean phase
+        // Phase ratios (0..1)
+        const float phase1End = 1f / 3f;
+        const float phase2End = 2f / 3f;
         const float heightPhase1 = 0.2f;
         const float heightPhase2 = 0.7f;
 
-        // Fixed camera offsets for phases
+        // Camera offsets
         const float phase1DipY = -0.02f;
         const float phase1ForwardZ = 0.01f;
         const float phase2DipY = -0.05f;
         const float phase2ForwardZ = 0.07f;
 
-        const float shakeFrequency = 6f;         // slower, more natural
-        const float shakeRollMultiplier = 0.2f;  // smaller roll
+        // Shake parameters
+        const float shakeFrequency = 6f;
+        const float shakeRollMultiplier = 0.2f;
 
         float t = 0f;
+
+        bool useClimbCamAnim = (cameraPivot != null && enableClimbCameraAnimation);
+
+        // Track current animated pitch so we can sync _pitch at the end
+        float currentPitch = startPitch;
 
         while (t < climbTime)
         {
@@ -480,29 +504,30 @@ public class FPController : MonoBehaviour
 
             // -------- Root movement (3-phase height curve) --------
             float heightT;
+
             if (norm < phase1End)
             {
                 float p = norm / phase1End;
-                p = p * p;
+                p *= p; // ease-in
                 heightT = Mathf.Lerp(0f, heightPhase1, p);
             }
             else if (norm < phase2End)
             {
                 float p = (norm - phase1End) / (phase2End - phase1End);
-                p = 1f - (1f - p) * (1f - p);
+                p = 1f - (1f - p) * (1f - p); // ease-out
                 heightT = Mathf.Lerp(heightPhase1, heightPhase2, p);
             }
             else
             {
                 float p = (norm - phase2End) / (1f - phase2End);
-                p = p * (2f - p);
+                p = p * (2f - p); // ease-in-out
                 heightT = Mathf.Lerp(heightPhase2, 1f, p);
             }
 
             transform.position = Vector3.Lerp(startPos, targetPos, heightT);
 
             // -------- Camera animation --------
-            if (cameraPivot != null && enableClimbCameraAnimation)
+            if (useClimbCamAnim)
             {
                 float offsetY = 0f;
                 float offsetZ = 0f;
@@ -510,43 +535,57 @@ public class FPController : MonoBehaviour
 
                 if (norm < phase1End)
                 {
+                    // Phase 1: move camera a bit down/forward AND
+                    // move pitch from startPitch to climbPhase1TargetPitch
                     float p = norm / phase1End;
+
                     offsetY = Mathf.Lerp(0f, phase1DipY, p);
                     offsetZ = Mathf.Lerp(0f, phase1ForwardZ, p);
+
+                    float lerpedPitch = Mathf.Lerp(startPitch, climbPhase1TargetPitch, p);
+                    pitchOffset = lerpedPitch - startPitch;
                 }
                 else if (norm < phase2End)
                 {
+                    // Phase 2: from target pitch to target + lean
                     float p = (norm - phase1End) / (phase2End - phase1End);
+
                     offsetY = Mathf.Lerp(phase1DipY, phase2DipY, p);
                     offsetZ = Mathf.Lerp(phase1ForwardZ, phase2ForwardZ, p);
-                    pitchOffset = Mathf.Lerp(0f, climbForwardLean, p);
+
+                    float startOffset = phase1Delta;
+                    float endOffset = phase1Delta + climbForwardLean;
+                    pitchOffset = Mathf.Lerp(startOffset, endOffset, p);
                 }
                 else
                 {
+                    // Phase 3: from target + lean back to target
                     float p = (norm - phase2End) / (1f - phase2End);
+
                     offsetY = Mathf.Lerp(phase2DipY, 0f, p);
                     offsetZ = Mathf.Lerp(phase2ForwardZ, 0f, p);
-                    pitchOffset = Mathf.Lerp(climbForwardLean, 0f, p);
+
+                    float startOffset = phase1Delta + climbForwardLean;
+                    float endOffset = phase1Delta;
+                    pitchOffset = Mathf.Lerp(startOffset, endOffset, p);
                 }
 
-                // Shake (subtle, mostly vertical with a little forward sway)
                 float shakeAmp = Mathf.Max(0f, climbShakeAmount);
 
-                // Two noise channels for Y and forward
                 float noiseY = 0f;
                 float noiseZ = 0f;
 
                 if (shakeAmp > 0f)
                 {
                     float t1 = Time.time * shakeFrequency;
-                    float t2 = t1 + 37.13f; // random phase offset
+                    float t2 = t1 + 37.13f;
 
-                    noiseY = (Mathf.PerlinNoise(t1, 0f) - 0.5f) * 2f;  // -1..1
-                    noiseZ = (Mathf.PerlinNoise(0f, t2) - 0.5f) * 2f;  // -1..1
+                    noiseY = (Mathf.PerlinNoise(t1, 0f) - 0.5f) * 2f; // -1..1
+                    noiseZ = (Mathf.PerlinNoise(0f, t2) - 0.5f) * 2f; // -1..1
                 }
 
-                float shakeY = noiseY * shakeAmp;              // mostly vertical
-                float shakeForward = noiseZ * shakeAmp * 0.5f; // slight forward/back
+                float shakeY = noiseY * shakeAmp;
+                float shakeForward = noiseZ * shakeAmp * 0.5f;
                 float shakeRoll = noiseY * shakeRollMultiplier;
 
                 // Position: base offset + subtle shake
@@ -555,17 +594,19 @@ public class FPController : MonoBehaviour
                 lp.z += offsetZ + shakeForward;
                 cameraPivot.localPosition = lp;
 
-                // Rotation: keep pitch animation, very small roll from shake
+                // Rotation: always relative to the original startPitch
                 Vector3 euler = camStartLocalEuler;
                 euler.x = startPitch + pitchOffset;
                 euler.z += shakeRoll;
                 cameraPivot.localEulerAngles = euler;
+
+                currentPitch = euler.x; // track animated pitch
             }
 
             yield return null;
         }
 
-        // Snap to target
+        // Snap to target position
         transform.position = targetPos;
 
         controller.enabled = true;
@@ -579,17 +620,24 @@ public class FPController : MonoBehaviour
                             QueryTriggerInteraction.Ignore))
         {
             Vector3 p = transform.position;
-            float halfHeight = controller.height * 0.5f;
-            p.y = hit.point.y + halfHeight;
+            float halfH = controller.height * 0.5f;
+            p.y = hit.point.y + halfH;
             transform.position = p;
         }
 
-        // Restore camera local state
+        // Restore only camera local position, keep final pitch
         if (cameraPivot != null)
         {
             cameraPivot.localPosition = camStartLocalPos;
-            cameraPivot.localEulerAngles = camStartLocalEuler;
+
+            // Ensure camera rotation uses the final animated pitch
+            Vector3 finalEuler = cameraPivot.localEulerAngles;
+            finalEuler.x = currentPitch;
+            cameraPivot.localEulerAngles = finalEuler;
         }
+
+        // Sync look pitch so HandleLook continues smoothly from final angle
+        _pitch = Mathf.Clamp(currentPitch, pitchMin, pitchMax);
 
         _velocity = oldVelocity;
         _velocity.y = 0f;
@@ -598,7 +646,16 @@ public class FPController : MonoBehaviour
         freezeMovement = false;
     }
 
+    private float NormalizeAngle(float angle)
+    {
+        angle %= 360f;
+        if (angle > 180f)
+            angle -= 360f;
+        return angle;
+    }
+
     #endregion
+
 
     #region Crouch
     void HandleCrouch()
