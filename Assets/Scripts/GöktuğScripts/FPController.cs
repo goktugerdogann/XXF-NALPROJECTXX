@@ -65,25 +65,83 @@ public class FPController : MonoBehaviour
 
     [Header("Climb Camera")]
     public bool enableClimbCameraAnimation = true;
-    [Tooltip("Forward lean during climb (degrees). Negative means leaning forward.")]
     public float climbForwardLean = -10f;
-    [Tooltip("Camera shake amount during climb. Set 0 to disable.")]
     public float climbShakeAmount = 0.01f;
 
-    [Header("Climb Angle Limit")]
-    [Tooltip("Max absolute pitch angle allowed to start a climb (degrees).")]
     [Header("Climb Angle Limits")]
-    public float climbPitchMin = -45f;   // En aşşağı bakış limiti
-    public float climbPitchMax = 45f;    // En yukarı bakış limiti
+    public float climbPitchMin = -45f;
+    public float climbPitchMax = 45f;
 
-    [HideInInspector] 
-    public bool isOnMovingPlatform = false; 
-    [HideInInspector] 
-    public Vector3 platformMoveDelta = Vector3.zero; // Trenin anlık hareket vektörü
-    
+    [Header("Ladder")]
+    public LayerMask ladderMask;
+    public float ladderSpeed = 3f;          // W / S speed
+    public float ladderSideSpeed = 2.5f;    // A / D speed on ladder
+    public float ladderAttachDistance = 0.6f;
+    public float ladderSurfaceOffset = 0.2f;
+
+    [Header("Ladder Rays")]
+    public float ladderRayLength = 1.0f;        // length of ladder rays
+    public float ladderExitRayOffset = 0.25f;   // from feet up (exit ray)
+    public float ladderControlRayOffset = 0.0f; // from feet (control ray)
+
+    [Header("Ladder Fall Settings")]
+    public float ladderYawRange = 100f; // allowed yaw range in degrees (-range to +range)
+
+    // Ladder state
+    private bool isOnLadder = false;
+    private RaycastHit ladderHit;
+    private float ladderTopY;
+    private float ladderBottomY;
+
+    [Header("Ladder Look Limits (debug only)")]
+    public float ladderYawAttach = 40f;
+    public float ladderYawDetach = 55f;
+    public float ladderPitchMin = -45f;
+    public float ladderPitchMax = 60f;
+
+    [Header("Ladder Camera")]
+    public bool enableLadderCameraAnimation = false; // default OFF so camera does not auto move
+    public float ladderStepInterval = 0.35f;
+    public float ladderStepDuration = 0.25f;
+    public float ladderStepPitchAmplitude = 4f;
+    public float ladderStepVerticalAmplitude = 0.02f;
+    public float ladderStepRollAmplitude = 1.2f;
+
+    [Header("Ladder Debug")]
+    public bool debugLadderAngles = true;
+    public float currentLadderAngle = 0f;
+    public float currentLadderPitch = 0f;
+
+    // re-attach block timer
+    private float _ladderReattachBlockTimer = 0f;
+
+    [Header("Ladder Top Exit")]
+    public float ladderTopExitDuration = 0.2f;  // smooth top exit duration
+    public float ladderTopExtraForward = 0.6f;  // extra forward offset on top
+    public float ladderTopExtraUp = 0.15f;      // small extra up on top
+    public float ladderStepForwardAmplitude = 0.06f;
+        [Header("Wall Block (camera clipping)")]
+    public float wallBlockDistance = 0.25f;   // kafa ile duvar arasindaki min mesafe
+    public LayerMask wallMask;               // duvar / zemin / map layerlari (Player HARIC)
+
+
+    // YENI: ileri dogru cekme miktari
+
+    private bool _isExitingLadderTop = false;
+    private Vector3 _ladderExitStartPos;
+    private Vector3 _ladderExitEndPos;
+    private float _ladderExitTimer = 0f;
+    private Vector3 _ladderExitCamStartLocalPos;
+    private Vector3 _ladderExitCamStartLocalEuler;
+
+    [HideInInspector]
+    public bool isOnMovingPlatform = false;
+    [HideInInspector]
+    public Vector3 platformMoveDelta = Vector3.zero;
+
     // Internal
     private float _pitch;
-    private Vector3 _velocity; // world-space
+    private Vector3 _velocity;
     private bool _isGrounded;
     private bool _isSprinting;
     private bool _isCrouching;
@@ -94,12 +152,17 @@ public class FPController : MonoBehaviour
     private Vector3 _camLocalDefault;
     private float _baseBottomY = 0f;
     private float yVelocity = 0f;
-    private bool _headBobJustStarted = true;
     bool firstmove = true;
-    public float climbPhase1TargetPitch = 40f; // desired pitch at end of phase 1
 
+    public float climbPhase1TargetPitch = 40f;
 
     private bool isClimbing = false;
+
+    // Ladder camera step state
+    private Vector2 _ladderInput;
+    private float _ladderStepProgress = -1f;
+    private float _ladderStepCooldown = 0f;
+    private int _ladderStepSign = 1;
 
 #if ENABLE_INPUT_SYSTEM
     private Keyboard kb => Keyboard.current;
@@ -109,10 +172,6 @@ public class FPController : MonoBehaviour
     void Awake()
     {
         controller = GetComponent<CharacterController>();
-
-        // cameraPivot'u sadece Inspector'dan veriyoruz
-        // if (cameraPivot == null && Camera.main != null)
-        //     cameraPivot = Camera.main.transform;
 
         if (cameraPivot != null)
             _camLocalDefault = cameraPivot.localPosition;
@@ -124,6 +183,9 @@ public class FPController : MonoBehaviour
 
     void Update()
     {
+        if (_ladderReattachBlockTimer > 0f)
+            _ladderReattachBlockTimer -= Time.deltaTime;
+
         if (!IsInventoryOpen && !freezeMovement)
         {
             HandleLook();
@@ -131,7 +193,7 @@ public class FPController : MonoBehaviour
 
         HandleCrouch();
 
-        if (!isClimbing && JumpPressedThisFrame())
+        if (!isClimbing && !isOnLadder && JumpPressedThisFrame())
         {
             _jumpQueued = true;
             _lastJumpPressedTime = Time.time;
@@ -143,6 +205,7 @@ public class FPController : MonoBehaviour
         }
 
         HandleHeadBob();
+        HandleLadderCamera();
         HandleCursorToggle();
     }
 
@@ -253,6 +316,12 @@ public class FPController : MonoBehaviour
     #region Movement
     void HandleMovement()
     {
+        if (_isExitingLadderTop)
+        {
+            UpdateLadderTopExit();
+            return;
+        }
+
         if (isClimbing) return;
 
         Bounds b = controller.bounds;
@@ -260,7 +329,8 @@ public class FPController : MonoBehaviour
         float dynRadius = Mathf.Max(0.18f, controller.radius * 0.6f);
         _isGrounded = Physics.CheckSphere(feet, dynRadius, groundMask, QueryTriggerInteraction.Ignore) || controller.isGrounded;
 
-        if (_isGrounded) _lastGroundedTime = Time.time;
+        if (_isGrounded && !isOnLadder)
+            _lastGroundedTime = Time.time;
 
         _isSprinting = SprintHeld() && !_isCrouching;
         float desiredSpeed = _isCrouching ? crouchSpeed : (_isSprinting ? sprintSpeed : walkSpeed);
@@ -276,90 +346,93 @@ public class FPController : MonoBehaviour
 
         Vector3 currentHorizontal = new Vector3(_velocity.x, 0f, _velocity.z);
 
-        // Direction change and braking tweak (less sliding)
-        if (hasInput && currentHorizontal.sqrMagnitude > 0.0001f)
+        if (!isOnLadder)
         {
-            Vector3 curNorm = currentHorizontal.normalized;
-            Vector3 desiredNorm = desiredHorizontal.normalized;
-            float dot = Vector3.Dot(curNorm, desiredNorm);
-
-            // If we are trying to move in almost opposite direction, apply strong brake first
-            if (dot < 0f)
+            if (hasInput && currentHorizontal.sqrMagnitude > 0.0001f)
             {
-                float reverseMult = _isGrounded ? 2.5f : 1.2f;
-                float brake = decel * reverseMult;
-                Vector3 brakeStep = Vector3.ClampMagnitude(-currentHorizontal, brake * Time.deltaTime);
-                currentHorizontal += brakeStep;
-            }
-        }
+                Vector3 curNorm = currentHorizontal.normalized;
+                Vector3 desiredNorm = desiredHorizontal.normalized;
+                float dot = Vector3.Dot(curNorm, desiredNorm);
 
-        // Normal accel / decel
-        if (hasInput)
-        {
-            Vector3 diff = desiredHorizontal - currentHorizontal;
-            Vector3 change = Vector3.ClampMagnitude(diff, accel * Time.deltaTime);
-            currentHorizontal += change;
+                if (dot < 0f)
+                {
+                    float reverseMult = _isGrounded ? 2.5f : 1.2f;
+                    float brake = decel * reverseMult;
+                    Vector3 brakeStep = Vector3.ClampMagnitude(-currentHorizontal, brake * Time.deltaTime);
+                    currentHorizontal += brakeStep;
+                }
+            }
+
+            if (hasInput)
+            {
+                Vector3 diff = desiredHorizontal - currentHorizontal;
+                Vector3 change = Vector3.ClampMagnitude(diff, accel * Time.deltaTime);
+                currentHorizontal += change;
+            }
+            else
+            {
+                Vector3 change = Vector3.ClampMagnitude(-currentHorizontal, decel * Time.deltaTime);
+                currentHorizontal += change;
+
+                if (currentHorizontal.magnitude < 0.05f)
+                    currentHorizontal = Vector3.zero;
+            }
+
+            currentHorizontal = ProjectOnGround(currentHorizontal);
         }
         else
         {
-            Vector3 change = Vector3.ClampMagnitude(-currentHorizontal, decel * Time.deltaTime);
-            currentHorizontal += change;
-
-            // Small deadzone so we do not drift forever with tiny velocity
-            if (currentHorizontal.magnitude < 0.05f)
-                currentHorizontal = Vector3.zero;
+            currentHorizontal = Vector3.zero;
         }
 
-        currentHorizontal = ProjectOnGround(currentHorizontal);
+        HandleLadder(input, ref currentHorizontal);
 
-        if (_isGrounded && _velocity.y < 0f) _velocity.y = -2f;
-        else _velocity.y += gravity * Time.deltaTime;
-
-        bool canJump =
-            _jumpQueued &&
-            Time.timeSinceLevelLoad >= 0.1f &&
-            (Time.time - _lastGroundedTime) <= coyoteTime &&
-            (Time.time - _lastJumpPressedTime) <= jumpBuffer;
-
-        if (canJump)
+        if (!isOnLadder && !_isExitingLadderTop)
         {
-            _jumpQueued = false;
-            _lastJumpPressedTime = -999f;
-            _lastGroundedTime = -999f;
-            _velocity.y = Mathf.Sqrt(-2f * gravity * jumpHeight);
-        }
+            if (_isGrounded && _velocity.y < 0f)
+            {
+                _velocity.y = -2f;
+            }
+            else
+            {
+                _velocity.y += gravity * Time.deltaTime;
+            }
 
-        if (!_isGrounded && IsOnSteepSlope(out Vector3 steepNormal))
-        {
-            Vector3 steepDown = Vector3.ProjectOnPlane(Vector3.down, steepNormal).normalized;
-            currentHorizontal += steepDown * (Mathf.Abs(slopeSlideGravity) * 0.2f * Time.deltaTime);
+            bool canJump =
+                _jumpQueued &&
+                Time.timeSinceLevelLoad >= 0.1f &&
+                (Time.time - _lastGroundedTime) <= coyoteTime &&
+                (Time.time - _lastJumpPressedTime) <= jumpBuffer;
+
+            if (canJump)
+            {
+                _jumpQueued = false;
+                _lastJumpPressedTime = -999f;
+                _lastGroundedTime = -999f;
+                _velocity.y = Mathf.Sqrt(-2f * gravity * jumpHeight);
+            }
+
+            if (!_isGrounded && IsOnSteepSlope(out Vector3 steepNormal))
+            {
+                Vector3 steepDown = Vector3.ProjectOnPlane(Vector3.down, steepNormal).normalized;
+                currentHorizontal += steepDown * (Mathf.Abs(slopeSlideGravity) * 0.2f * Time.deltaTime);
+            }
         }
 
         _velocity.x = currentHorizontal.x;
         _velocity.z = currentHorizontal.z;
 
-      //controller.Move(_velocity * Time.deltaTime); //Tren hareketi için kaldırılan kod.
-      // YENİ: Oyuncunun tüm hareketini hesapla
-      Vector3 playerMovement = _velocity * Time.deltaTime; 
+        Vector3 playerMovement = _velocity * Time.deltaTime;
 
-      // YENİ KOD BLOĞU: Platform Üzerinde Durma ve Hareket Etme Kontrolü
-      if (isOnMovingPlatform)
-      {
-          // BİREBİR platform delta zaten frame-bazlı world-space delta (trainPos - lastTrainPos).
-          // 1) Yerçekimini yok sayma / hafif snap
-          _velocity.y = -1f;
+        if (isOnMovingPlatform)
+        {
+            _velocity.y = -1f;
+            _isGrounded = true;
+            _lastGroundedTime = Time.time;
+            playerMovement += platformMoveDelta;
+        }
 
-          // 2) Grounded kaybını önle (platform üzerindeyken kendini grounded say)
-          _isGrounded = true;
-          _lastGroundedTime = Time.time;
-
-          // 3) Platform delta (world-space) doğrudan playerMovement'e ekle.
-          // NOT: platformMoveDelta bir 'delta position' (metre/frame) olmalı. Eğer train velocity veriyorsa çarp Time.deltaTime.
-          playerMovement += platformMoveDelta;
-      }
-
-      // SON TAŞIMA KOMUTU:
-      controller.Move(playerMovement);
+        controller.Move(playerMovement);
     }
 
     Vector3 ProjectOnGround(Vector3 vec)
@@ -367,8 +440,6 @@ public class FPController : MonoBehaviour
         if (GetGround(out RaycastHit hit))
             return Vector3.ProjectOnPlane(vec, hit.normal);
         return vec;
-        
-
     }
 
     bool GetGround(out RaycastHit hit)
@@ -391,6 +462,435 @@ public class FPController : MonoBehaviour
     }
     #endregion
 
+    #region Ladder
+    void UpdateLadderTopExit()
+    {
+        if (!_isExitingLadderTop)
+            return;
+
+        _ladderExitTimer += Time.deltaTime;
+        float t = Mathf.Clamp01(_ladderExitTimer / Mathf.Max(0.0001f, ladderTopExitDuration));
+
+        // move player
+        transform.position = Vector3.Lerp(_ladderExitStartPos, _ladderExitEndPos, t);
+
+        // simple camera anim
+        if (cameraPivot != null)
+        {
+            Vector3 targetCamPos = _camLocalDefault;
+            targetCamPos.y += 0.03f;
+
+            cameraPivot.localPosition = Vector3.Lerp(
+                _ladderExitCamStartLocalPos,
+                targetCamPos,
+                t
+            );
+
+            float targetPitch = _pitch - 6f;
+            Vector3 euler = cameraPivot.localEulerAngles;
+            float startPitch = NormalizeAngle(_ladderExitCamStartLocalEuler.x);
+            float newPitch = Mathf.LerpAngle(startPitch, targetPitch, t);
+            euler.x = newPitch;
+            cameraPivot.localEulerAngles = euler;
+        }
+
+        if (t >= 1f)
+        {
+            _velocity = Vector3.zero;
+            _isGrounded = true;
+            _isExitingLadderTop = false;
+
+            if (cameraPivot != null)
+            {
+                // 1) Kameranin final acisini al
+                Vector3 camEuler = cameraPivot.localEulerAngles;
+                float camPitch = NormalizeAngle(camEuler.x);
+
+                // 2) Look sistemine de bu aciyi yaz
+                _pitch = Mathf.Clamp(camPitch, pitchMin, pitchMax);
+
+                // 3) Pozisyonu defaulta cek, sadece roll sifirla
+                cameraPivot.localPosition = _camLocalDefault;
+                camEuler.z = 0f;
+                cameraPivot.localEulerAngles = camEuler;
+            }
+        }
+
+    }
+
+    void HandleLadder(Vector2 input, ref Vector3 currentHorizontal)
+    {
+        // while top-exit anim is playing, do not touch ladder logic
+        if (_isExitingLadderTop)
+        {
+            _ladderInput = Vector2.zero;
+            return;
+        }
+
+        if (isOnLadder)
+        {
+            float vertical = input.y;   // W / S
+            float horizontal = input.x; // A / D
+
+            _ladderInput = input;
+
+            Bounds cb = controller.bounds;
+            float feetY = cb.min.y;
+
+            Vector3 ladderForward = -ladderHit.normal;
+            ladderForward.y = 0f;
+            if (ladderForward.sqrMagnitude < 0.0001f)
+                ladderForward = transform.forward;
+            ladderForward.Normalize();
+
+            float rayLen = Mathf.Max(ladderRayLength, ladderAttachDistance + 0.2f);
+
+            // control ray (feet)
+            Vector3 controlOrigin = new Vector3(transform.position.x,
+                                                feetY + ladderControlRayOffset,
+                                                transform.position.z);
+
+            // exit ray (above feet)
+            Vector3 exitOrigin = new Vector3(transform.position.x,
+                                             feetY + ladderExitRayOffset,
+                                             transform.position.z);
+
+            bool controlHit = Physics.Raycast(controlOrigin, ladderForward, out RaycastHit controlInfo, rayLen, ladderMask, QueryTriggerInteraction.Ignore);
+            bool exitHit = Physics.Raycast(exitOrigin, ladderForward, out RaycastHit exitInfo, rayLen, ladderMask, QueryTriggerInteraction.Ignore);
+
+            if (debugLadderAngles)
+            {
+                Debug.DrawRay(controlOrigin, ladderForward * rayLen, Color.green);
+                Debug.DrawRay(exitOrigin, ladderForward * rayLen, Color.cyan);
+            }
+
+            // lost ladder entirely -> drop
+            if (!controlHit)
+            {
+                ExitLadder();
+                _velocity.y = gravity * 0.2f;
+                return;
+            }
+
+            // still same ladder
+            ladderHit = controlInfo;
+            ladderTopY = controlInfo.collider.bounds.max.y;
+            ladderBottomY = controlInfo.collider.bounds.min.y;
+
+            // going down and below bottom -> drop
+            if (cb.min.y <= ladderBottomY - 0.05f && vertical < 0f)
+            {
+                ExitLadder();
+                return;
+            }
+
+            // top exit: lower ray hits, upper ray does not, and W pressed
+            if (controlHit && !exitHit && vertical > 0.1f)
+            {
+                ExitLadderAtTopSmooth(controlInfo);
+                return;
+            }
+
+            // normal ladder movement
+            _velocity.y = vertical * ladderSpeed;
+
+            Vector3 sideDir = transform.right;
+            sideDir.y = 0f;
+            if (sideDir.sqrMagnitude > 0.0001f)
+                sideDir.Normalize();
+            currentHorizontal = sideDir * (horizontal * ladderSideSpeed);
+
+            AlignToLadderPlane();
+
+            if (cameraPivot != null && ladderYawRange > 0f)
+            {
+                if (IsLadderYawOutsideRange(out float absAngle))
+                {
+                    currentLadderAngle = absAngle;
+                    ExitLadder();
+                    _velocity.y = gravity * 0.1f;
+                    return;
+                }
+            }
+
+            if (JumpPressedThisFrame())
+            {
+                ExitLadder();
+                _velocity.y = 0f;
+                return;
+            }
+
+            _isGrounded = false;
+        }
+        else
+        {
+            _ladderInput = Vector2.zero;
+
+            if (_ladderReattachBlockTimer <= 0f &&
+                input.y > 0.1f &&
+                CheckForLadder(out ladderHit))
+            {
+                isOnLadder = true;
+
+                Collider col = ladderHit.collider;
+                Bounds bounds = col.bounds;
+                ladderTopY = bounds.max.y;
+                ladderBottomY = bounds.min.y;
+
+                _velocity = Vector3.zero;
+                AlignToLadderPlane();
+                _isGrounded = false;
+            }
+        }
+    }
+
+    bool CheckForLadder(out RaycastHit hit)
+    {
+        float y = controller.bounds.min.y + controller.height * 0.25f;
+        Vector3 origin = new Vector3(transform.position.x, y, transform.position.z);
+        Vector3 dir = transform.forward;
+
+        if (debugLadderAngles)
+            Debug.DrawRay(origin, dir * ladderAttachDistance, Color.yellow);
+
+        return Physics.Raycast(origin, dir, out hit, ladderAttachDistance, ladderMask, QueryTriggerInteraction.Ignore);
+    }
+
+    void AlignToLadderPlane()
+    {
+        Vector3 normal = ladderHit.normal;
+
+        Vector3 pos = transform.position;
+        float dist = Vector3.Dot(pos - ladderHit.point, normal);
+        pos -= normal * (dist - ladderSurfaceOffset);
+        transform.position = pos;
+    }
+
+    bool IsLadderYawOutsideRange(out float absAngle)
+    {
+        absAngle = 0f;
+
+        if (cameraPivot == null)
+            return false;
+
+        Vector3 ladderForward = -ladderHit.normal;
+        ladderForward.y = 0f;
+
+        Vector3 camForward = cameraPivot.forward;
+        camForward.y = 0f;
+
+        if (ladderForward.sqrMagnitude < 0.0001f || camForward.sqrMagnitude < 0.0001f)
+            return false;
+
+        ladderForward.Normalize();
+        camForward.Normalize();
+
+        float angle = Vector3.SignedAngle(ladderForward, camForward, Vector3.up);
+        absAngle = Mathf.Abs(angle);
+
+        currentLadderAngle = absAngle;
+
+        return absAngle > Mathf.Abs(ladderYawRange);
+    }
+
+    void ExitLadder()
+    {
+        isOnLadder = false;
+        _ladderInput = Vector2.zero;
+        _ladderReattachBlockTimer = 0.25f;
+    }
+
+    void ExitLadderSimple()
+    {
+        isOnLadder = false;
+        _ladderInput = Vector2.zero;
+
+        if (_velocity.y > 0f)
+            _velocity.y = 0f;
+
+        Vector3 pos = transform.position;
+        pos.y += 0.05f;
+        controller.Move(Vector3.zero); // just to update internal state
+
+        _isGrounded = false;
+        _lastGroundedTime = Time.time;
+        _ladderReattachBlockTimer = 0.2f;
+    }
+
+    void ExitLadderAtTopSmooth(RaycastHit controlInfo)
+    {
+        isOnLadder = false;
+        _ladderInput = Vector2.zero;
+
+        Vector3 forward = -controlInfo.normal;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = transform.forward;
+        else
+            forward.Normalize();
+
+        float halfH = controller.height * 0.5f;
+        float topY = controlInfo.collider.bounds.max.y;
+
+        _ladderExitStartPos = transform.position;
+
+        Vector3 endPos = transform.position;
+        endPos.y = topY + halfH + ladderTopExtraUp;
+        endPos += forward * (controller.radius + ladderTopExtraForward);
+
+        _ladderExitEndPos = endPos;
+        _ladderExitTimer = 0f;
+        _isExitingLadderTop = true;
+
+        _velocity = Vector3.zero;
+        _ladderReattachBlockTimer = 0.35f;
+
+        if (cameraPivot != null)
+        {
+            _ladderExitCamStartLocalPos = cameraPivot.localPosition;
+            _ladderExitCamStartLocalEuler = cameraPivot.localEulerAngles;
+        }
+    }
+    #endregion
+
+    #region Ladder Camera
+
+    void HandleLadderCamera()
+    {
+        if (cameraPivot == null)
+            return;
+
+        // top-exit animasyonunda kameraya karismayalim
+        if (_isExitingLadderTop)
+            return;
+
+        if (!enableLadderCameraAnimation)
+        {
+            ResetLadderCameraToDefault();
+            return;
+        }
+
+        if (!isOnLadder)
+        {
+            ResetLadderCameraToDefault();
+            return;
+        }
+
+        // adim tetikleme (W / S veya A / D hareket ediyorsa)
+        if (Mathf.Abs(_ladderInput.y) > 0.1f || Mathf.Abs(_ladderInput.x) > 0.1f)
+        {
+            _ladderStepCooldown -= Time.deltaTime;
+            if (_ladderStepCooldown <= 0f)
+            {
+                _ladderStepCooldown = ladderStepInterval;
+                _ladderStepProgress = 0f;
+                _ladderStepSign = _ladderInput.y >= 0f ? 1 : -1;
+            }
+        }
+        else
+        {
+            _ladderStepCooldown = 0f;
+        }
+
+        float stepPitchOffset = 0f;
+        float stepY = 0f;
+        float stepRoll = 0f;
+        float stepForward = 0f;
+
+        // “tik” animasyonu
+        if (_ladderStepProgress >= 0f)
+        {
+            _ladderStepProgress += Time.deltaTime / Mathf.Max(0.0001f, ladderStepDuration);
+            float t = Mathf.Clamp01(_ladderStepProgress);
+
+            // dalga 0 -> 1 -> 0 ama biz yukari cekerken once hizli yukari, sonra bekleme istiyoruz
+            float pull = Mathf.Sin(t * Mathf.PI * 0.5f); // 0..1
+                                                         // asagi donus yok, sadece yukari cekme hissi
+            float upFactor = Mathf.Clamp01(pull);
+
+            // kamera yukari
+            float dir = (_ladderInput.y >= 0f) ? 1f : -1f;
+            stepY = upFactor * ladderStepVerticalAmplitude * dir;
+
+            // kamera biraz ileri
+            stepForward = upFactor * ladderStepForwardAmplitude;
+
+            // kol ile yukari cekerken hafif asagi bakma
+            stepPitchOffset = upFactor * ladderStepPitchAmplitude * dir;
+
+            // hafif sag/sol sallanma
+            float waveSide = Mathf.Sin(t * Mathf.PI);
+            stepRoll = waveSide * ladderStepRollAmplitude * _ladderStepSign;
+
+            if (_ladderStepProgress >= 1f)
+            {
+                _ladderStepProgress = -1f;
+            }
+        }
+
+        // pozisyon
+        Vector3 targetPos = _camLocalDefault;
+        targetPos.y += stepY;
+        targetPos.z += stepForward;
+
+        cameraPivot.localPosition = Vector3.Lerp(
+            cameraPivot.localPosition,
+            targetPos,
+            Time.deltaTime * 18f
+        );
+
+        // rotasyon
+        Vector3 camEuler = cameraPivot.localEulerAngles;
+        float currentPitch = NormalizeAngle(camEuler.x);
+
+        float targetPitch = Mathf.Clamp(
+            _pitch + stepPitchOffset,
+            pitchMin,
+            pitchMax
+        );
+
+        float newPitch = Mathf.LerpAngle(
+            currentPitch,
+            targetPitch,
+            Time.deltaTime * 18f
+        );
+
+        camEuler.x = newPitch;
+        camEuler.z = Mathf.LerpAngle(
+            camEuler.z,
+            stepRoll,
+            Time.deltaTime * 18f
+        );
+
+        cameraPivot.localEulerAngles = camEuler;
+    }
+
+    void ResetLadderCameraToDefault()
+    {
+        cameraPivot.localPosition = Vector3.Lerp(
+            cameraPivot.localPosition,
+            _camLocalDefault,
+            Time.deltaTime * 10f
+        );
+
+        Vector3 euler = cameraPivot.localEulerAngles;
+        float currentPitch = NormalizeAngle(euler.x);
+        float blendedPitch = Mathf.LerpAngle(
+            currentPitch,
+            _pitch,
+            Time.deltaTime * 10f
+        );
+        euler.x = blendedPitch;
+        euler.z = Mathf.LerpAngle(euler.z, 0f, Time.deltaTime * 10f);
+        cameraPivot.localEulerAngles = euler;
+
+        _ladderStepProgress = -1f;
+        _ladderStepCooldown = 0f;
+        _ladderStepSign = 1;
+    }
+
+    #endregion
+
     #region Climb
 
     private void OnControllerColliderHit(ControllerColliderHit hit)
@@ -398,15 +898,12 @@ public class FPController : MonoBehaviour
         if (isClimbing || freezeMovement)
             return;
 
-        // Only climbable layers
         if ((climbableLayers.value & (1 << hit.gameObject.layer)) == 0)
             return;
 
-        // Only climb when falling
         if (_velocity.y >= 0f)
             return;
 
-        // Do not start climb if still grounded
         if (_isGrounded)
             return;
 
@@ -415,10 +912,8 @@ public class FPController : MonoBehaviour
 
     private void TryStartClimb(ControllerColliderHit hit)
     {
-        // Normalize pitch to -180..180
         float pitch = NormalizeAngle(_pitch);
 
-        // Cancel climb if pitch is outside allowed range
         if (pitch < climbPitchMin || pitch > climbPitchMax)
             return;
 
@@ -431,7 +926,6 @@ public class FPController : MonoBehaviour
         if (remaining <= 0f)
             return;
 
-        // Do not allow climbing if the ledge is too high
         if (remaining > maxClimbRemaining)
             return;
 
@@ -441,7 +935,6 @@ public class FPController : MonoBehaviour
         Vector3 targetPos = transform.position;
         targetPos.y += climbUp;
 
-        // Small forward offset on top
         Vector3 forward = cameraPivot != null ? cameraPivot.forward : transform.forward;
         forward.y = 0f;
         if (forward.sqrMagnitude > 0.0001f)
@@ -461,32 +954,25 @@ public class FPController : MonoBehaviour
         Vector3 oldVelocity = _velocity;
         _velocity = Vector3.zero;
 
-        // Camera local state at climb start
         Vector3 camStartLocalPos = cameraPivot != null ? cameraPivot.localPosition : Vector3.zero;
         Vector3 camStartLocalEuler = cameraPivot != null ? cameraPivot.localEulerAngles : Vector3.zero;
 
-        // Start pitch normalized
         float startPitch = NormalizeAngle(camStartLocalEuler.x);
 
-        // How far from start to target at end of phase 1
         float phase1Delta = climbPhase1TargetPitch - startPitch;
 
-        // Controller off during climb to avoid jitter
         controller.enabled = false;
 
-        // Phase ratios (0..1)
         const float phase1End = 1f / 3f;
         const float phase2End = 2f / 3f;
         const float heightPhase1 = 0.2f;
         const float heightPhase2 = 0.7f;
 
-        // Camera offsets
         const float phase1DipY = -0.02f;
         const float phase1ForwardZ = 0.01f;
         const float phase2DipY = -0.05f;
         const float phase2ForwardZ = 0.07f;
 
-        // Shake parameters
         const float shakeFrequency = 6f;
         const float shakeRollMultiplier = 0.2f;
 
@@ -494,39 +980,36 @@ public class FPController : MonoBehaviour
 
         bool useClimbCamAnim = (cameraPivot != null && enableClimbCameraAnimation);
 
-        // Track current animated pitch so we can sync _pitch at the end
         float currentPitch = startPitch;
 
         while (t < climbTime)
         {
             t += Time.deltaTime;
-            float norm = Mathf.Clamp01(t / climbTime); // 0..1
+            float norm = Mathf.Clamp01(t / climbTime);
 
-            // -------- Root movement (3-phase height curve) --------
             float heightT;
 
             if (norm < phase1End)
             {
                 float p = norm / phase1End;
-                p *= p; // ease-in
+                p *= p;
                 heightT = Mathf.Lerp(0f, heightPhase1, p);
             }
             else if (norm < phase2End)
             {
                 float p = (norm - phase1End) / (phase2End - phase1End);
-                p = 1f - (1f - p) * (1f - p); // ease-out
+                p = 1f - (1f - p) * (1f - p);
                 heightT = Mathf.Lerp(heightPhase1, heightPhase2, p);
             }
             else
             {
                 float p = (norm - phase2End) / (1f - phase2End);
-                p = p * (2f - p); // ease-in-out
+                p = p * (2f - p);
                 heightT = Mathf.Lerp(heightPhase2, 1f, p);
             }
 
             transform.position = Vector3.Lerp(startPos, targetPos, heightT);
 
-            // -------- Camera animation --------
             if (useClimbCamAnim)
             {
                 float offsetY = 0f;
@@ -535,8 +1018,6 @@ public class FPController : MonoBehaviour
 
                 if (norm < phase1End)
                 {
-                    // Phase 1: move camera a bit down/forward AND
-                    // move pitch from startPitch to climbPhase1TargetPitch
                     float p = norm / phase1End;
 
                     offsetY = Mathf.Lerp(0f, phase1DipY, p);
@@ -547,7 +1028,6 @@ public class FPController : MonoBehaviour
                 }
                 else if (norm < phase2End)
                 {
-                    // Phase 2: from target pitch to target + lean
                     float p = (norm - phase1End) / (phase2End - phase1End);
 
                     offsetY = Mathf.Lerp(phase1DipY, phase2DipY, p);
@@ -559,7 +1039,6 @@ public class FPController : MonoBehaviour
                 }
                 else
                 {
-                    // Phase 3: from target + lean back to target
                     float p = (norm - phase2End) / (1f - phase2End);
 
                     offsetY = Mathf.Lerp(phase2DipY, 0f, p);
@@ -580,63 +1059,56 @@ public class FPController : MonoBehaviour
                     float t1 = Time.time * shakeFrequency;
                     float t2 = t1 + 37.13f;
 
-                    noiseY = (Mathf.PerlinNoise(t1, 0f) - 0.5f) * 2f; // -1..1
-                    noiseZ = (Mathf.PerlinNoise(0f, t2) - 0.5f) * 2f; // -1..1
+                    noiseY = (Mathf.PerlinNoise(t1, 0f) - 0.5f) * 2f;
+                    noiseZ = (Mathf.PerlinNoise(0f, t2) - 0.5f) * 2f;
                 }
 
                 float shakeY = noiseY * shakeAmp;
                 float shakeForward = noiseZ * shakeAmp * 0.5f;
                 float shakeRoll = noiseY * shakeRollMultiplier;
 
-                // Position: base offset + subtle shake
                 Vector3 lp = camStartLocalPos;
                 lp.y += offsetY + shakeY;
                 lp.z += offsetZ + shakeForward;
                 cameraPivot.localPosition = lp;
 
-                // Rotation: always relative to the original startPitch
                 Vector3 euler = camStartLocalEuler;
                 euler.x = startPitch + pitchOffset;
                 euler.z += shakeRoll;
                 cameraPivot.localEulerAngles = euler;
 
-                currentPitch = euler.x; // track animated pitch
+                currentPitch = euler.x;
             }
 
             yield return null;
         }
 
-        // Snap to target position
         transform.position = targetPos;
 
         controller.enabled = true;
 
-        // Small ground snap
         if (Physics.Raycast(transform.position + Vector3.up * 0.5f,
                             Vector3.down,
-                            out RaycastHit hit,
+                            out RaycastHit hit2,
                             3f,
                             groundMask,
                             QueryTriggerInteraction.Ignore))
         {
             Vector3 p = transform.position;
             float halfH = controller.height * 0.5f;
-            p.y = hit.point.y + halfH;
+            p.y = hit2.point.y + halfH;
             transform.position = p;
         }
 
-        // Restore only camera local position, keep final pitch
         if (cameraPivot != null)
         {
             cameraPivot.localPosition = camStartLocalPos;
 
-            // Ensure camera rotation uses the final animated pitch
             Vector3 finalEuler = cameraPivot.localEulerAngles;
             finalEuler.x = currentPitch;
             cameraPivot.localEulerAngles = finalEuler;
         }
 
-        // Sync look pitch so HandleLook continues smoothly from final angle
         _pitch = Mathf.Clamp(currentPitch, pitchMin, pitchMax);
 
         _velocity = oldVelocity;
@@ -655,7 +1127,6 @@ public class FPController : MonoBehaviour
     }
 
     #endregion
-
 
     #region Crouch
     void HandleCrouch()
@@ -705,8 +1176,7 @@ public class FPController : MonoBehaviour
     {
         if (!enableHeadBob || cameraPivot == null) return;
 
-        // During climb we use our own camera animation
-        if (isClimbing) return;
+        if (isClimbing || isOnLadder || _isExitingLadderTop) return;
 
         Vector3 horiz = new Vector3(_velocity.x, 0f, _velocity.z);
         bool moving = _isGrounded && horiz.magnitude > 0.2f;
