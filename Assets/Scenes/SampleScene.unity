@@ -1953,6 +1953,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   cameraPivot: {fileID: 392099516}
   controller: {fileID: 450252359}
+  equipManager: {fileID: 648339454}
+  requireWeaponForLean: 1
   freezeMovement: 0
   mouseSensitivity: 1.2
   lookXMultiplier: 1

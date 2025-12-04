@@ -57,6 +57,20 @@ public class EquipManager : MonoBehaviour
             EquipFromSlot(3);
     }
 
+    // NEW: check if we are holding a weapon
+    public bool IsHoldingWeapon()
+    {
+        if (currentItem == null) return false;
+        return currentItem.isWeapon;
+    }
+
+    // NEW: check if we are holding the repair tool
+    public bool IsHoldingRepairTool()
+    {
+        if (currentItem == null) return false;
+        return currentItem.isRepairTool;
+    }
+
     public void EquipFromSlot(int slotIndex)
     {
         InteractionRaycaster ray = FindObjectOfType<InteractionRaycaster>();

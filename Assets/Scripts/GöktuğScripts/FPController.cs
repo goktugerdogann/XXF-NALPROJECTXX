@@ -10,6 +10,10 @@ public class FPController : MonoBehaviour
     public Transform cameraPivot; // Usually Main Camera
     public CharacterController controller;
 
+    [Header("Equipment")]
+    public EquipManager equipManager;
+    public bool requireWeaponForLean = true;
+
     [HideInInspector]
     public bool freezeMovement = false;
 
@@ -187,6 +191,12 @@ public class FPController : MonoBehaviour
         if (lockCursorOnStart) LockCursor(true);
 
         _yaw = transform.eulerAngles.y;
+
+        // auto hook equipManager if not set
+        if (equipManager == null)
+        {
+            equipManager = EquipManager.Instance;
+        }
     }
 
     void Update()
@@ -242,7 +252,6 @@ public class FPController : MonoBehaviour
 
         if (limitYaw)
         {
-            // candidate yaw
             float candidateYaw = _yaw + yawInput;
 
             float minOffset;
@@ -1257,7 +1266,15 @@ public class FPController : MonoBehaviour
     {
         bool leanBlockedByState = isOnLadder || isClimbing || _isExitingLadderTop;
 
-        if (!enableLean || cameraPivot == null)
+        // check weapon
+        bool holdingWeapon = true;
+        if (requireWeaponForLean)
+        {
+            holdingWeapon = (equipManager != null && equipManager.IsHoldingWeapon());
+        }
+
+        // if lean disabled or no camera or no weapon, just reset lean
+        if (!enableLean || cameraPivot == null || !holdingWeapon)
         {
             if (Mathf.Abs(_leanValue) > 0.0001f)
             {

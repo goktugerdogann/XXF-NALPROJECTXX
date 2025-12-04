@@ -21,3 +21,7 @@ MonoBehaviour:
   canEquip: 1
   canDrop: 1
   equippedPrefab: {fileID: 1731593644965337618, guid: fd745543d659b3942a048affc9e1e6a8, type: 3}
+  isPlaceable: 0
+  isWeapon: 0
+  isRepairTool: 1
+  requiresRepairToolForPickup: 0

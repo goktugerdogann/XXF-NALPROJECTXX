@@ -163,6 +163,23 @@ public class InteractionRaycaster : MonoBehaviour
             GameObject target = hit.collider.gameObject;
             PickupItem pickup = target.GetComponent<PickupItem>();
 
+            // NEW: check if this pickup needs repair tool and if we hold it
+            if (!CanPickupThis(pickup))
+            {
+                // cancel any charging
+                if (isHoldingPickup)
+                {
+                    isHoldingPickup = false;
+                    pickupTimer = 0f;
+                    UpdatePickupProgressUI(0f, true);
+                }
+
+                if (uiManager != null)
+                    uiManager.ShowInteractText("You need the repair tool to pick this");
+
+                return;
+            }
+
             if (Input.GetKey(pickupKey))
             {
                 if (!isHoldingPickup)
@@ -592,5 +609,25 @@ public class InteractionRaycaster : MonoBehaviour
             if (crosshairObject != null && hideCrosshairWhileCharging)
                 crosshairObject.SetActive(false);
         }
+    }
+
+    // NEW: logic to decide if pickup is allowed with current equipped item
+    bool CanPickupThis(PickupItem pickup)
+    {
+        // no pickup component -> do not restrict
+        if (pickup == null || pickup.itemData == null)
+            return true;
+
+        ItemData data = pickup.itemData;
+
+        // if this item does not require repair tool, allow
+        if (!data.requiresRepairToolForPickup)
+            return true;
+
+        // this item requires repair tool in hand
+        if (EquipManager.Instance == null)
+            return false;
+
+        return EquipManager.Instance.IsHoldingRepairTool();
     }
 }
