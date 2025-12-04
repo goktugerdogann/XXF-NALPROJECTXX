@@ -1974,10 +1974,7 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 8
-  groundCheckRadius: 0.28
-  groundCheckOffset: 0.1
   slopeSlideGravity: -35
-  crouchToggleFallback: 306
   standHeight: 0.4
   crouchHeight: 1.1
   crouchSmooth: 12
@@ -2008,27 +2005,28 @@ MonoBehaviour:
   ladderExitRayOffset: 0.25
   ladderControlRayOffset: -0.02
   ladderYawRange: 100
-  ladderYawAttach: 40
-  ladderYawDetach: 55
-  ladderPitchMin: -45
-  ladderPitchMax: 60
   enableLadderCameraAnimation: 1
   ladderStepInterval: 0.35
   ladderStepDuration: 0.25
   ladderStepPitchAmplitude: 4
   ladderStepVerticalAmplitude: 0.02
   ladderStepRollAmplitude: 1.2
+  ladderStepForwardAmplitude: 0.06
   debugLadderAngles: 1
   currentLadderAngle: 0
-  currentLadderPitch: 0
   ladderTopExitDuration: 0.1
   ladderTopExtraForward: 0.4
   ladderTopExtraUp: 0.7
-  ladderStepForwardAmplitude: 0.06
-  wallBlockDistance: 0.25
-  wallMask:
-    serializedVersion: 2
-    m_Bits: 0
+  enableLean: 1
+  leanAngle: 12
+  leanOffset: 0.4
+  leanSpeed: 10
+  limitYawWhileLeaning: 1
+  leftYawMin: -45
+  leftYawMax: 10
+  rightYawMin: -10
+  rightYawMax: 45
+  leanYawLimit: 50
   isOnMovingPlatform: 0
   platformMoveDelta: {x: 0, y: 0, z: 0}
   climbPhase1TargetPitch: 15
@@ -3957,7 +3955,7 @@ Transform:
   m_GameObject: {fileID: 963194225}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -26.107445, y: -8.0640335, z: 8.012227}
+  m_LocalPosition: {x: -26.003445, y: -8.156034, z: 7.9182277}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7500,7 +7498,7 @@ Transform:
   m_GameObject: {fileID: 2008593412}
   serializedVersion: 2
   m_LocalRotation: {x: 2.524355e-29, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -26.107445, y: -8.0640335, z: 8.012227}
+  m_LocalPosition: {x: -26.003445, y: -8.156034, z: 7.9182277}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -7660,7 +7658,7 @@ Transform:
   m_GameObject: {fileID: 2090323404}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0.044}
+  m_LocalPosition: {x: 0.104, y: -0.092, z: -0.05}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
