@@ -8,6 +8,7 @@ public class FPController : MonoBehaviour
 {
     [Header("References")]
     public Transform cameraPivot; // Usually Main Camera
+
     public CharacterController controller;
 
     [Header("Equipment")]
@@ -111,14 +112,20 @@ public class FPController : MonoBehaviour
     private float _ladderReattachBlockTimer = 0f;
 
     [Header("Ladder Top Exit")]
-    public float ladderTopExitDuration = 0.2f;  // smooth top exit duration
-    public float ladderTopExtraForward = 0.6f;  // extra forward offset on top
-    public float ladderTopExtraUp = 0.15f;      // small extra up on top
+    public float ladderTopExitDuration = 0.2f; // smooth top exit duration
+    public float ladderTopExtraForward = 0.6f; // extra forward offset on top
+    public float ladderTopExtraUp = 0.15f;     // small extra up on top
+
+    [Header("Ladder Visuals")]
+    public HeldItemAnimator heldItemAnimator;
+    public InteractionRaycaster interactionRaycaster;
+    public PlayerVisualHider playerVisualHider;
+    private bool _ladderEquipHidden = false;
 
     [Header("Lean (Q/E)")]
     public bool enableLean = true;
-    public float leanAngle = 18f;      // roll degrees
-    public float leanOffset = 0.45f;   // camera x offset
+    public float leanAngle = 18f;    // roll degrees
+    public float leanOffset = 0.45f; // camera x offset
     public float leanSpeed = 10f;
 
     [Header("Lean Camera Yaw Limits")]
@@ -127,11 +134,23 @@ public class FPController : MonoBehaviour
     public float leftYawMax = 80f;
     public float rightYawMin = -80f;
     public float rightYawMax = 80f;
-    public float leanYawLimit = 80f;   // fallback symmetric
+    public float leanYawLimit = 80f; // fallback symmetric
 
-    private float _leanValue = 0f;     // -1 left, 0 center, 1 right
+    [Header("Lean Body")]
+    public bool moveBodyWithLean = true;
+    public float leanBodyOffset = 0.3f; // how far sideways at full lean
+
+    [Header("Lean Timing")]
+    public float leanLerpDuration = 0.25f;   // how long to reach full lean visually
+    public float leanLookUnlockRatio = 0.8f; // at which ratio (0-1) mouse look unlocks
+
+    private float _leanValue = 0f; // -1 left, 0 center, 1 right
     private bool _blockMovementForLean = false;
     private bool _leanInProgress = false;
+    private bool _leanLookLocked = false; // lock look while lean animation is running
+    private float _leanAnimT = 1f;
+    private float _currentLeanTarget = 0f;
+    private float _prevLeanValueForBody = 0f;
 
     // yaw limiting
     private float _yaw;
@@ -144,10 +163,8 @@ public class FPController : MonoBehaviour
     private Vector3 _ladderExitCamStartLocalPos;
     private Vector3 _ladderExitCamStartLocalEuler;
 
-    [HideInInspector]
-    public bool isOnMovingPlatform = false;
-    [HideInInspector]
-    public Vector3 platformMoveDelta = Vector3.zero;
+    [HideInInspector] public bool isOnMovingPlatform = false;
+    [HideInInspector] public Vector3 platformMoveDelta = Vector3.zero;
 
     // Internal
     private float _pitch;
@@ -158,14 +175,15 @@ public class FPController : MonoBehaviour
     private float _lastGroundedTime = -999f;
     private float _lastJumpPressedTime = -999f;
     private bool _jumpQueued = false;
+
     private float _bobTimer;
     private Vector3 _camLocalDefault;
     private float _baseBottomY = 0f;
+
     private float yVelocity = 0f;
     bool firstmove = true;
 
     public float climbPhase1TargetPitch = 40f;
-
     private bool isClimbing = false;
 
     // Ladder camera step state
@@ -188,7 +206,8 @@ public class FPController : MonoBehaviour
 
         _baseBottomY = controller.center.y - controller.height * 0.5f;
 
-        if (lockCursorOnStart) LockCursor(true);
+        if (lockCursorOnStart)
+            LockCursor(true);
 
         _yaw = transform.eulerAngles.y;
 
@@ -237,19 +256,29 @@ public class FPController : MonoBehaviour
         }
     }
 
+    // New property: blocks inventory when on ladder / climb / ladder top exit
+    public bool IsInventoryBlocked
+    {
+        get
+        {
+            return isOnLadder || isClimbing || _isExitingLadderTop;
+        }
+    }
+
     #region Look
+
     void HandleLook()
     {
         if (freezeMovement) return;
+        if (_leanLookLocked) return; // lock mouse look while lean animation is running
 
         Vector2 lookDelta = GetLookDelta();
-        float invert = invertY ? 1f : -1f;
 
+        float invert = invertY ? 1f : -1f;
         float yawInput = lookDelta.x * mouseSensitivity * lookXMultiplier;
         float pitchInput = lookDelta.y * mouseSensitivity * lookYMultiplier * invert;
 
         bool limitYaw = limitYawWhileLeaning && _blockMovementForLean;
-
         if (limitYaw)
         {
             float candidateYaw = _yaw + yawInput;
@@ -278,9 +307,7 @@ public class FPController : MonoBehaviour
 
             float minYaw = _leanStartYaw + minOffset;
             float maxYaw = _leanStartYaw + maxOffset;
-
             candidateYaw = Mathf.Clamp(candidateYaw, minYaw, maxYaw);
-
             _yaw = candidateYaw;
         }
         else
@@ -303,10 +330,9 @@ public class FPController : MonoBehaviour
 
     Vector2 GetLookDelta()
     {
-        if (freezeMovement)
-            return Vector2.zero;
-        if (IsInventoryOpen)
-            return Vector2.zero;
+        if (freezeMovement) return Vector2.zero;
+        if (IsInventoryOpen) return Vector2.zero;
+
 #if ENABLE_INPUT_SYSTEM
         if (ms != null)
         {
@@ -314,19 +340,21 @@ public class FPController : MonoBehaviour
             return md * 0.1f;
         }
 #endif
+
         float x = Input.GetAxis("Mouse X");
         float y = Input.GetAxis("Mouse Y");
         return new Vector2(x, y);
     }
+
     #endregion
 
     #region Input
+
     Vector2 GetMoveInput()
     {
-        if (freezeMovement)
-            return Vector2.zero;
-        if (_blockMovementForLean)
-            return Vector2.zero;
+        if (freezeMovement) return Vector2.zero;
+        if (_blockMovementForLean) return Vector2.zero;
+
 #if ENABLE_INPUT_SYSTEM
         if (kb != null)
         {
@@ -335,10 +363,12 @@ public class FPController : MonoBehaviour
             if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) x += 1f;
             if (kb.wKey.isPressed || kb.upArrowKey.isPressed) y += 1f;
             if (kb.sKey.isPressed || kb.downArrowKey.isPressed) y -= 1f;
+
             Vector2 v = new Vector2(x, y);
             return v.sqrMagnitude > 1f ? v.normalized : v;
         }
 #endif
+
         float h = Input.GetAxisRaw("Horizontal");
         float v2 = Input.GetAxisRaw("Vertical");
         Vector2 vv = new Vector2(h, v2);
@@ -347,37 +377,41 @@ public class FPController : MonoBehaviour
 
     bool JumpPressedThisFrame()
     {
-        if (freezeMovement)
-            return false;
+        if (freezeMovement) return false;
+
 #if ENABLE_INPUT_SYSTEM
         if (kb != null) return kb.spaceKey.wasPressedThisFrame;
 #endif
+
         return Input.GetKeyDown(KeyCode.Space);
     }
 
     bool SprintHeld()
     {
-        if (freezeMovement)
-            return false;
+        if (freezeMovement) return false;
+
 #if ENABLE_INPUT_SYSTEM
         if (kb != null) return kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed;
 #endif
+
         return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
     }
 
     bool CrouchHeld()
     {
-        if (freezeMovement)
-            return false;
+        if (freezeMovement) return false;
+
 #if ENABLE_INPUT_SYSTEM
-        if (kb != null)
-            return kb.leftCtrlKey.isPressed;
+        if (kb != null) return kb.leftCtrlKey.isPressed;
 #endif
+
         return Input.GetKey(KeyCode.LeftControl);
     }
+
     #endregion
 
     #region Movement
+
     void HandleMovement()
     {
         if (_isExitingLadderTop)
@@ -391,7 +425,9 @@ public class FPController : MonoBehaviour
         Bounds b = controller.bounds;
         Vector3 feet = b.center + Vector3.down * (b.extents.y - 0.02f);
         float dynRadius = Mathf.Max(0.18f, controller.radius * 0.6f);
-        _isGrounded = Physics.CheckSphere(feet, dynRadius, groundMask, QueryTriggerInteraction.Ignore) || controller.isGrounded;
+
+        _isGrounded = Physics.CheckSphere(feet, dynRadius, groundMask, QueryTriggerInteraction.Ignore)
+                      || controller.isGrounded;
 
         if (_isGrounded && !isOnLadder)
             _lastGroundedTime = Time.time;
@@ -417,7 +453,6 @@ public class FPController : MonoBehaviour
                 Vector3 curNorm = currentHorizontal.normalized;
                 Vector3 desiredNorm = desiredHorizontal.normalized;
                 float dot = Vector3.Dot(curNorm, desiredNorm);
-
                 if (dot < 0f)
                 {
                     float reverseMult = _isGrounded ? 2.5f : 1.2f;
@@ -437,7 +472,6 @@ public class FPController : MonoBehaviour
             {
                 Vector3 change = Vector3.ClampMagnitude(-currentHorizontal, decel * Time.deltaTime);
                 currentHorizontal += change;
-
                 if (currentHorizontal.magnitude < 0.05f)
                     currentHorizontal = Vector3.zero;
             }
@@ -462,17 +496,17 @@ public class FPController : MonoBehaviour
                 _velocity.y += gravity * Time.deltaTime;
             }
 
-            bool canJump =
-                _jumpQueued &&
-                Time.timeSinceLevelLoad >= 0.1f &&
-                (Time.time - _lastGroundedTime) <= coyoteTime &&
-                (Time.time - _lastJumpPressedTime) <= jumpBuffer;
+            bool canJump = _jumpQueued
+                           && Time.timeSinceLevelLoad >= 0.1f
+                           && (Time.time - _lastGroundedTime) <= coyoteTime
+                           && (Time.time - _lastJumpPressedTime) <= jumpBuffer;
 
             if (canJump)
             {
                 _jumpQueued = false;
                 _lastJumpPressedTime = -999f;
                 _lastGroundedTime = -999f;
+
                 _velocity.y = Mathf.Sqrt(-2f * gravity * jumpHeight);
             }
 
@@ -493,6 +527,7 @@ public class FPController : MonoBehaviour
             _velocity.y = -1f;
             _isGrounded = true;
             _lastGroundedTime = Time.time;
+
             playerMovement += platformMoveDelta;
         }
 
@@ -510,7 +545,14 @@ public class FPController : MonoBehaviour
     {
         Vector3 origin = transform.position + Vector3.up * 0.1f;
         float rayLen = (controller.height * 0.5f) + 0.5f;
-        return Physics.SphereCast(origin, controller.radius * 0.95f, Vector3.down, out hit, rayLen, groundMask, QueryTriggerInteraction.Ignore);
+
+        return Physics.SphereCast(origin,
+                                  controller.radius * 0.95f,
+                                  Vector3.down,
+                                  out hit,
+                                  rayLen,
+                                  groundMask,
+                                  QueryTriggerInteraction.Ignore);
     }
 
     bool IsOnSteepSlope(out Vector3 normal)
@@ -524,13 +566,14 @@ public class FPController : MonoBehaviour
         }
         return false;
     }
+
     #endregion
 
     #region Ladder
+
     void UpdateLadderTopExit()
     {
-        if (!_isExitingLadderTop)
-            return;
+        if (!_isExitingLadderTop) return;
 
         _ladderExitTimer += Time.deltaTime;
         float t = Mathf.Clamp01(_ladderExitTimer / Mathf.Max(0.0001f, ladderTopExitDuration));
@@ -549,6 +592,7 @@ public class FPController : MonoBehaviour
             );
 
             float targetPitch = _pitch - 6f;
+
             Vector3 euler = cameraPivot.localEulerAngles;
             float startPitch = NormalizeAngle(_ladderExitCamStartLocalEuler.x);
             float newPitch = Mathf.LerpAngle(startPitch, targetPitch, t);
@@ -572,6 +616,9 @@ public class FPController : MonoBehaviour
                 camEuler.z = 0f;
                 cameraPivot.localEulerAngles = camEuler;
             }
+
+            // ladder top exit anim finished, show hands etc again
+            SetLadderVisualState(false);
         }
     }
 
@@ -587,7 +634,6 @@ public class FPController : MonoBehaviour
         {
             float vertical = input.y;
             float horizontal = input.x;
-
             _ladderInput = input;
 
             Bounds cb = controller.bounds;
@@ -601,13 +647,8 @@ public class FPController : MonoBehaviour
 
             float rayLen = Mathf.Max(ladderRayLength, ladderAttachDistance + 0.2f);
 
-            Vector3 controlOrigin = new Vector3(transform.position.x,
-                                                feetY + ladderControlRayOffset,
-                                                transform.position.z);
-
-            Vector3 exitOrigin = new Vector3(transform.position.x,
-                                             feetY + ladderExitRayOffset,
-                                             transform.position.z);
+            Vector3 controlOrigin = new Vector3(transform.position.x, feetY + ladderControlRayOffset, transform.position.z);
+            Vector3 exitOrigin = new Vector3(transform.position.x, feetY + ladderExitRayOffset, transform.position.z);
 
             bool controlHit = Physics.Raycast(controlOrigin, ladderForward, out RaycastHit controlInfo, rayLen, ladderMask, QueryTriggerInteraction.Ignore);
             bool exitHit = Physics.Raycast(exitOrigin, ladderForward, out RaycastHit exitInfo, rayLen, ladderMask, QueryTriggerInteraction.Ignore);
@@ -647,6 +688,7 @@ public class FPController : MonoBehaviour
             sideDir.y = 0f;
             if (sideDir.sqrMagnitude > 0.0001f)
                 sideDir.Normalize();
+
             currentHorizontal = sideDir * (horizontal * ladderSideSpeed);
 
             AlignToLadderPlane();
@@ -675,9 +717,7 @@ public class FPController : MonoBehaviour
         {
             _ladderInput = Vector2.zero;
 
-            if (_ladderReattachBlockTimer <= 0f &&
-                input.y > 0.1f &&
-                CheckForLadder(out ladderHit))
+            if (_ladderReattachBlockTimer <= 0f && input.y > 0.1f && CheckForLadder(out ladderHit))
             {
                 isOnLadder = true;
 
@@ -689,6 +729,9 @@ public class FPController : MonoBehaviour
                 _velocity = Vector3.zero;
                 AlignToLadderPlane();
                 _isGrounded = false;
+
+                // first time on ladder: hide weapon, block placement etc.
+                SetLadderVisualState(true);
             }
         }
     }
@@ -708,7 +751,6 @@ public class FPController : MonoBehaviour
     void AlignToLadderPlane()
     {
         Vector3 normal = ladderHit.normal;
-
         Vector3 pos = transform.position;
         float dist = Vector3.Dot(pos - ladderHit.point, normal);
         pos -= normal * (dist - ladderSurfaceOffset);
@@ -718,9 +760,7 @@ public class FPController : MonoBehaviour
     bool IsLadderYawOutsideRange(out float absAngle)
     {
         absAngle = 0f;
-
-        if (cameraPivot == null)
-            return false;
+        if (cameraPivot == null) return false;
 
         Vector3 ladderForward = -ladderHit.normal;
         ladderForward.y = 0f;
@@ -736,7 +776,6 @@ public class FPController : MonoBehaviour
 
         float angle = Vector3.SignedAngle(ladderForward, camForward, Vector3.up);
         absAngle = Mathf.Abs(angle);
-
         currentLadderAngle = absAngle;
 
         return absAngle > Mathf.Abs(ladderYawRange);
@@ -747,6 +786,8 @@ public class FPController : MonoBehaviour
         isOnLadder = false;
         _ladderInput = Vector2.zero;
         _ladderReattachBlockTimer = 0.25f;
+
+        SetLadderVisualState(false);
     }
 
     void ExitLadderSimple()
@@ -758,10 +799,12 @@ public class FPController : MonoBehaviour
             _velocity.y = 0f;
 
         controller.Move(Vector3.zero);
-
         _isGrounded = false;
         _lastGroundedTime = Time.time;
+
         _ladderReattachBlockTimer = 0.2f;
+
+        SetLadderVisualState(false);
     }
 
     void ExitLadderAtTopSmooth(RaycastHit controlInfo)
@@ -797,26 +840,53 @@ public class FPController : MonoBehaviour
             _ladderExitCamStartLocalPos = cameraPivot.localPosition;
             _ladderExitCamStartLocalEuler = cameraPivot.localEulerAngles;
         }
+
+        // visuals will be restored when top exit animation ends
     }
+
+    void SetLadderVisualState(bool onLadder)
+    {
+        if (onLadder)
+        {
+            if (_ladderEquipHidden) return;
+            _ladderEquipHidden = true;
+
+            if (heldItemAnimator != null)
+                heldItemAnimator.PlayHide();
+
+            if (interactionRaycaster != null)
+                interactionRaycaster.BlockPlacementForConversation(true);
+
+            if (playerVisualHider != null)
+                playerVisualHider.SetHidden(true);
+        }
+        else
+        {
+            if (!_ladderEquipHidden) return;
+            _ladderEquipHidden = false;
+
+            if (heldItemAnimator != null)
+                heldItemAnimator.PlayShow();
+
+            if (interactionRaycaster != null)
+                interactionRaycaster.BlockPlacementForConversation(false);
+
+            if (playerVisualHider != null)
+                playerVisualHider.SetHidden(false);
+        }
+    }
+
     #endregion
 
     #region Ladder Camera
+
     void HandleLadderCamera()
     {
-        if (cameraPivot == null)
-            return;
-
-        if (_leanInProgress)
-            return;
-
-        if (_isExitingLadderTop)
-            return;
-
-        if (!enableLadderCameraAnimation)
-            return;
-
-        if (!isOnLadder)
-            return;
+        if (cameraPivot == null) return;
+        if (_leanInProgress) return;
+        if (_isExitingLadderTop) return;
+        if (!enableLadderCameraAnimation) return;
+        if (!isOnLadder) return;
 
         if (Mathf.Abs(_ladderInput.y) > 0.1f || Mathf.Abs(_ladderInput.x) > 0.1f)
         {
@@ -845,8 +915,8 @@ public class FPController : MonoBehaviour
 
             float pull = Mathf.Sin(t * Mathf.PI * 0.5f);
             float upFactor = Mathf.Clamp01(pull);
-
             float dir = (_ladderInput.y >= 0f) ? 1f : -1f;
+
             stepY = upFactor * ladderStepVerticalAmplitude * dir;
             stepForward = upFactor * ladderStepForwardAmplitude;
             stepPitchOffset = upFactor * ladderStepPitchAmplitude * dir;
@@ -872,7 +942,6 @@ public class FPController : MonoBehaviour
 
         Vector3 camEuler = cameraPivot.localEulerAngles;
         float currentPitch = NormalizeAngle(camEuler.x);
-
         float targetPitch = Mathf.Clamp(
             _pitch + stepPitchOffset,
             pitchMin,
@@ -884,8 +953,8 @@ public class FPController : MonoBehaviour
             targetPitch,
             Time.deltaTime * 18f
         );
-
         camEuler.x = newPitch;
+
         camEuler.z = Mathf.LerpAngle(
             camEuler.z,
             stepRoll,
@@ -894,20 +963,25 @@ public class FPController : MonoBehaviour
 
         cameraPivot.localEulerAngles = camEuler;
     }
+
     #endregion
 
     #region Climb
+
     private void OnControllerColliderHit(ControllerColliderHit hit)
     {
         if (isClimbing || freezeMovement)
             return;
 
+        // Only climbable layers
         if ((climbableLayers.value & (1 << hit.gameObject.layer)) == 0)
             return;
 
+        // Only climb when falling
         if (_velocity.y >= 0f)
             return;
 
+        // Do not start climb if still grounded
         if (_isGrounded)
             return;
 
@@ -916,8 +990,10 @@ public class FPController : MonoBehaviour
 
     private void TryStartClimb(ControllerColliderHit hit)
     {
+        // Normalize pitch to -180..180
         float pitch = NormalizeAngle(_pitch);
 
+        // Cancel climb if pitch is outside allowed range
         if (pitch < climbPitchMin || pitch > climbPitchMax)
             return;
 
@@ -930,20 +1006,22 @@ public class FPController : MonoBehaviour
         if (remaining <= 0f)
             return;
 
+        // Do not allow climbing if the ledge is too high
         if (remaining > maxClimbRemaining)
             return;
 
+        // Calculate how far to move the player upwards
         float playerHalfHeight = transform.localScale.y * 0.5f;
         float climbUp = remaining + playerHalfHeight;
 
         Vector3 targetPos = transform.position;
         targetPos.y += climbUp;
 
+        // Move the character slightly forward in camera direction
         Vector3 forward = cameraPivot != null ? cameraPivot.forward : transform.forward;
         forward.y = 0f;
         if (forward.sqrMagnitude > 0.0001f)
             forward.Normalize();
-
         targetPos += forward * climbForwardOffset;
 
         StartCoroutine(ClimbRoutine(targetPos));
@@ -962,13 +1040,13 @@ public class FPController : MonoBehaviour
         Vector3 camStartLocalEuler = cameraPivot != null ? cameraPivot.localEulerAngles : Vector3.zero;
 
         float startPitch = NormalizeAngle(camStartLocalEuler.x);
-
         float phase1Delta = climbPhase1TargetPitch - startPitch;
 
         controller.enabled = false;
 
         const float phase1End = 1f / 3f;
         const float phase2End = 2f / 3f;
+
         const float heightPhase1 = 0.2f;
         const float heightPhase2 = 0.7f;
 
@@ -981,9 +1059,7 @@ public class FPController : MonoBehaviour
         const float shakeRollMultiplier = 0.2f;
 
         float t = 0f;
-
         bool useClimbCamAnim = (cameraPivot != null && enableClimbCameraAnimation);
-
         float currentPitch = startPitch;
 
         while (t < climbTime)
@@ -1023,7 +1099,6 @@ public class FPController : MonoBehaviour
                 if (norm < phase1End)
                 {
                     float p = norm / phase1End;
-
                     offsetY = Mathf.Lerp(0f, phase1DipY, p);
                     offsetZ = Mathf.Lerp(0f, phase1ForwardZ, p);
 
@@ -1033,7 +1108,6 @@ public class FPController : MonoBehaviour
                 else if (norm < phase2End)
                 {
                     float p = (norm - phase1End) / (phase2End - phase1End);
-
                     offsetY = Mathf.Lerp(phase1DipY, phase2DipY, p);
                     offsetZ = Mathf.Lerp(phase1ForwardZ, phase2ForwardZ, p);
 
@@ -1044,7 +1118,6 @@ public class FPController : MonoBehaviour
                 else
                 {
                     float p = (norm - phase2End) / (1f - phase2End);
-
                     offsetY = Mathf.Lerp(phase2DipY, 0f, p);
                     offsetZ = Mathf.Lerp(phase2ForwardZ, 0f, p);
 
@@ -1054,7 +1127,6 @@ public class FPController : MonoBehaviour
                 }
 
                 float shakeAmp = Mathf.Max(0f, climbShakeAmount);
-
                 float noiseY = 0f;
                 float noiseZ = 0f;
 
@@ -1062,7 +1134,6 @@ public class FPController : MonoBehaviour
                 {
                     float t1 = Time.time * shakeFrequency;
                     float t2 = t1 + 37.13f;
-
                     noiseY = (Mathf.PerlinNoise(t1, 0f) - 0.5f) * 2f;
                     noiseZ = (Mathf.PerlinNoise(0f, t2) - 0.5f) * 2f;
                 }
@@ -1088,15 +1159,9 @@ public class FPController : MonoBehaviour
         }
 
         transform.position = targetPos;
-
         controller.enabled = true;
 
-        if (Physics.Raycast(transform.position + Vector3.up * 0.5f,
-                            Vector3.down,
-                            out RaycastHit hit2,
-                            3f,
-                            groundMask,
-                            QueryTriggerInteraction.Ignore))
+        if (Physics.Raycast(transform.position + Vector3.up * 0.5f, Vector3.down, out RaycastHit hit2, 3f, groundMask, QueryTriggerInteraction.Ignore))
         {
             Vector3 p = transform.position;
             float halfH = controller.height * 0.5f;
@@ -1107,7 +1172,6 @@ public class FPController : MonoBehaviour
         if (cameraPivot != null)
         {
             cameraPivot.localPosition = camStartLocalPos;
-
             Vector3 finalEuler = cameraPivot.localEulerAngles;
             finalEuler.x = currentPitch;
             cameraPivot.localEulerAngles = finalEuler;
@@ -1125,13 +1189,14 @@ public class FPController : MonoBehaviour
     private float NormalizeAngle(float angle)
     {
         angle %= 360f;
-        if (angle > 180f)
-            angle -= 360f;
+        if (angle > 180f) angle -= 360f;
         return angle;
     }
+
     #endregion
 
     #region Crouch
+
     void HandleCrouch()
     {
         if (CrouchHeld())
@@ -1150,10 +1215,8 @@ public class FPController : MonoBehaviour
 
         if (autoCenter)
         {
-            float newCenterY = bottomAnchored
-                ? _baseBottomY + controller.height * 0.5f
-                : controller.height * 0.5f;
-
+            float newCenterY = bottomAnchored ? _baseBottomY + controller.height * 0.5f
+                                              : controller.height * 0.5f;
             controller.center = new Vector3(0f, newCenterY, 0f);
         }
 
@@ -1170,11 +1233,19 @@ public class FPController : MonoBehaviour
     {
         float extra = (standHeight - controller.height) + 0.05f;
         Vector3 start = transform.position + Vector3.up * controller.height;
-        return !Physics.SphereCast(start, controller.radius * 0.95f, Vector3.up, out _, extra, ~0, QueryTriggerInteraction.Ignore);
+        return !Physics.SphereCast(start,
+                                   controller.radius * 0.95f,
+                                   Vector3.up,
+                                   out _,
+                                   extra,
+                                   ~0,
+                                   QueryTriggerInteraction.Ignore);
     }
+
     #endregion
 
     #region HeadBob
+
     void HandleHeadBob()
     {
         if (!enableHeadBob || cameraPivot == null || _leanInProgress) return;
@@ -1197,7 +1268,6 @@ public class FPController : MonoBehaviour
                     ref yVelocity,
                     0.08f
                 );
-
                 cameraPivot.localPosition = new Vector3(
                     _camLocalDefault.x,
                     smoothY,
@@ -1236,15 +1306,16 @@ public class FPController : MonoBehaviour
             );
         }
     }
+
     #endregion
 
     #region Cursor
+
     void HandleCursorToggle()
     {
-        if (freezeMovement)
-            return;
-        if (IsInventoryOpen)
-            return;
+        if (freezeMovement) return;
+        if (IsInventoryOpen) return;
+
 #if ENABLE_INPUT_SYSTEM
         if (kb != null && kb.escapeKey.wasPressedThisFrame)
             LockCursor(false);
@@ -1259,9 +1330,11 @@ public class FPController : MonoBehaviour
         Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
         Cursor.visible = !locked;
     }
+
     #endregion
 
     #region Lean
+
     void HandleLeanLogic()
     {
         bool leanBlockedByState = isOnLadder || isClimbing || _isExitingLadderTop;
@@ -1276,6 +1349,11 @@ public class FPController : MonoBehaviour
         // if lean disabled or no camera or no weapon, just reset lean
         if (!enableLean || cameraPivot == null || !holdingWeapon)
         {
+            // target back to 0
+            _currentLeanTarget = 0f;
+            _leanAnimT = 1f;
+            _leanLookLocked = false;
+
             if (Mathf.Abs(_leanValue) > 0.0001f)
             {
                 _leanValue = Mathf.Lerp(_leanValue, 0f, Time.deltaTime * leanSpeed);
@@ -1296,16 +1374,15 @@ public class FPController : MonoBehaviour
         if (!leanBlockedByState)
         {
 #if ENABLE_INPUT_SYSTEM
-            if (kb != null)
-            {
-                bool q = kb.qKey.isPressed;
-                bool e = kb.eKey.isPressed;
+        if (kb != null)
+        {
+            bool q = kb.qKey.isPressed;
+            bool e = kb.eKey.isPressed;
 
-                // Q = left (-1), E = right (+1)
-                if (q) targetLean = -1f;
-                else if (e) targetLean = 1f;
-            }
-            else
+            if (q) targetLean = -1f;    // left
+            else if (e) targetLean = 1f; // right
+        }
+        else
 #endif
             {
                 bool q = Input.GetKey(KeyCode.Q);
@@ -1316,45 +1393,95 @@ public class FPController : MonoBehaviour
             }
         }
 
-        // starting lean from center: record yaw
-        if (Mathf.Abs(targetLean) > 0.001f && Mathf.Abs(_leanValue) < 0.001f)
+        // *** ÖNEMLÝ KISIM: YENÝ LEAN BAÞLANGICI TESPÝTÝ ***
+        // Önceki frame’de hedef merkezde miydi?
+        bool wasCenteredTarget = Mathf.Abs(_currentLeanTarget) < 0.001f;
+        // Bu frame’de lean baþlýyor mu?
+        bool willLeanNow = Mathf.Abs(targetLean) > 0.001f;
+
+        if (willLeanNow && wasCenteredTarget)
         {
+            // Tam bu frame'de, "lean yok" durumundan "lean var" durumuna geçiyoruz
+            // Yani yeni lean'in referans açýsýný kaydet
             _leanStartYaw = _yaw;
         }
+        // *** SON ***
 
-        _leanValue = Mathf.Lerp(_leanValue, targetLean, Time.deltaTime * leanSpeed);
+        // eðer target deðiþtiyse anim timer sýfýrla
+        if (Mathf.Abs(targetLean - _currentLeanTarget) > 0.001f)
+        {
+            _currentLeanTarget = targetLean;
+            _leanAnimT = 0f;
+        }
 
-        _leanInProgress = Mathf.Abs(_leanValue) > 0.001f || Mathf.Abs(targetLean) > 0.001f;
+        // hedefe doðru anim zamaný ilerlet
+        if (Mathf.Abs(_leanValue - _currentLeanTarget) > 0.0001f)
+        {
+            float dur = Mathf.Max(0.0001f, leanLerpDuration);
+            _leanAnimT += Time.deltaTime / dur;
+            if (_leanAnimT > 1f) _leanAnimT = 1f;
+        }
+        else
+        {
+            _leanAnimT = 1f;
+        }
 
-        // block movement only while key held
+        // lean deðerini hedefe doðru lerple
+        _leanValue = Mathf.Lerp(_leanValue, _currentLeanTarget, Time.deltaTime * leanSpeed);
+
+        // lean animasyonu devam ediyor mu?
+        _leanInProgress = (Mathf.Abs(_currentLeanTarget) > 0.001f) && (_leanAnimT < 1f);
+
+        // mouse look’un kilitli olup olmamasý
+        _leanLookLocked = (Mathf.Abs(_currentLeanTarget) > 0.001f) &&
+                          (_leanAnimT < Mathf.Clamp01(leanLookUnlockRatio));
+
+        // hareketi sadece tuþ basýlýyken blokla
         _blockMovementForLean = (!leanBlockedByState && Mathf.Abs(targetLean) > 0.001f);
     }
 
+
     void ApplyLeanCamera()
     {
+        // gövdeyi yana kaydýrma
+        if (moveBodyWithLean && controller != null)
+        {
+            if (Mathf.Abs(_leanValue - _prevLeanValueForBody) > 0.0001f)
+            {
+                float delta = _leanValue - _prevLeanValueForBody;
+                Vector3 sideMove = transform.right * (delta * leanBodyOffset);
+                controller.Move(sideMove);
+                _prevLeanValueForBody = _leanValue;
+            }
+        }
+
         if (!enableLean || cameraPivot == null)
             return;
 
-        if (Mathf.Abs(_leanValue) < 0.001f)
-            return;
+        // her durumda kamerayý hedeften merkeze/lean pozuna doðru lerple
+        // leanValue 0’a yaklaþtýkça targetX ve targetRoll da merkeze yaklaþacak
 
-        // position X offset
+        // pozisyon X offset
         Vector3 lp = cameraPivot.localPosition;
         float targetX = _camLocalDefault.x + (_leanValue * leanOffset);
         lp.x = Mathf.Lerp(lp.x, targetX, Time.deltaTime * leanSpeed);
         cameraPivot.localPosition = lp;
 
-        // roll on Z axis, keep pitch/yaw untouched
+        // roll (Z ekseni), pitch / yaw’a dokunmuyoruz
         Vector3 e = cameraPivot.localEulerAngles;
         float targetRoll = -_leanValue * leanAngle;
         e.z = Mathf.LerpAngle(e.z, targetRoll, Time.deltaTime * leanSpeed);
         cameraPivot.localEulerAngles = e;
     }
+
+
     #endregion
 
     void OnDrawGizmosSelected()
     {
-        if (controller == null) controller = GetComponent<CharacterController>();
+        if (controller == null)
+            controller = GetComponent<CharacterController>();
+
         Bounds b = controller.bounds;
         Vector3 feet = b.center + Vector3.down * (b.extents.y - 0.02f);
         float dynRadius = Mathf.Max(0.18f, controller.radius * 0.6f);

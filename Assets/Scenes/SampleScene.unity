@@ -2019,6 +2019,9 @@ MonoBehaviour:
   ladderTopExitDuration: 0.1
   ladderTopExtraForward: 0.4
   ladderTopExtraUp: 0.7
+  heldItemAnimator: {fileID: 155986865}
+  interactionRaycaster: {fileID: 450252360}
+  playerVisualHider: {fileID: 450252361}
   enableLean: 1
   leanAngle: 12
   leanOffset: 0.4
@@ -2029,6 +2032,10 @@ MonoBehaviour:
   rightYawMin: -10
   rightYawMax: 45
   leanYawLimit: 50
+  moveBodyWithLean: 1
+  leanBodyOffset: 0.3
+  leanLerpDuration: 0.25
+  leanLookUnlockRatio: 0.8
   isOnMovingPlatform: 0
   platformMoveDelta: {x: 0, y: 0, z: 0}
   climbPhase1TargetPitch: 15
@@ -2455,6 +2462,7 @@ MonoBehaviour:
   dropForward: 1.2
   dropRayHeight: 1
   maxDropDownDistance: 3
+  heldAnimator: {fileID: 155986865}
   currentSlotIndex: -1
   currentItem: {fileID: 0}
 --- !u!4 &648339455

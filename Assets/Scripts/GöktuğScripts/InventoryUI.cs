@@ -7,7 +7,7 @@ public class InventoryUI : MonoBehaviour
     public static InventoryUI Instance;
 
     [Header("Drag & Drop")]
-    public Image dragIcon;                // Ýstersen kullanýrsýn
+    public Image dragIcon;                // Optional
     private RectTransform dragIconRect;
 
     [Header("References")]
@@ -30,7 +30,7 @@ public class InventoryUI : MonoBehaviour
     [Header("Player Control")]
     public FPController playerController;
 
-    //  VILLAGER KONUÞMASI VS. ÝÇÝN ENVANTER KÝLÝTÝ
+    // External inventory block (for dialogs etc.)
     [HideInInspector]
     public bool blockInventory = false;
 
@@ -60,8 +60,12 @@ public class InventoryUI : MonoBehaviour
 
     void Update()
     {
-        //  Envanter kilitliyse hiçbir input çalýþmasýn
+        // Global block (dialog etc.)
         if (blockInventory)
+            return;
+
+        // Block inventory while on ladder / climb / ladder top exit
+        if (playerController != null && playerController.IsInventoryBlocked)
             return;
 
         if (Input.GetKeyDown(toggleKey))
@@ -80,7 +84,9 @@ public class InventoryUI : MonoBehaviour
 
     public void OpenInventory()
     {
-        if (blockInventory) return; // güvenlik
+        // Again safety: do not open if blocked by player state
+        if (blockInventory) return;
+        if (playerController != null && playerController.IsInventoryBlocked) return;
 
         isOpen = true;
 
@@ -113,8 +119,8 @@ public class InventoryUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Villager konuþmasýna girerken dýþarýdan sessizce kapatmak için:
-    /// Hareket / cursor kilidini ELLEMEZ, sadece UI’ý gizler.
+    /// For closing inventory silently from conversation etc.
+    /// Does not touch cursor or movement flags.
     /// </summary>
     public void ForceCloseFromConversation()
     {
@@ -193,7 +199,7 @@ public class InventoryUI : MonoBehaviour
             dragIconAmount.text = slot.amount > 1 ? slot.amount.ToString() : "";
         }
 
-        // slot içindeki görsel geçici kaybolsun
+        // hide source icon while dragging
         if (slotIcons != null && draggingFromIndex < slotIcons.Length && slotIcons[draggingFromIndex] != null)
         {
             slotIcons[draggingFromIndex].enabled = false;
@@ -217,7 +223,7 @@ public class InventoryUI : MonoBehaviour
         if (dragIconAmount != null)
             dragIconAmount.gameObject.SetActive(false);
 
-        // bütün slotlarý güncelle, kaybolan iconlar geri gelsin
+        // refresh all slot icons
         UpdateUI();
     }
 
