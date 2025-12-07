@@ -14,7 +14,7 @@ public class PlatformingSurface : MonoBehaviour
             lastTrainPos = trainController.transform.position;
     }
 
-    private void Update()
+    private void FixedUpdate()
     {
         if (trainController == null) return;
 

@@ -528,7 +528,10 @@ public class FPController : MonoBehaviour
             _isGrounded = true;
             _lastGroundedTime = Time.time;
 
-            playerMovement += platformMoveDelta;
+            if (isOnMovingPlatform)
+            {
+                controller.Move(platformMoveDelta); // SADECE platform hareketi
+            }
         }
 
         controller.Move(playerMovement);
@@ -1393,28 +1396,28 @@ public class FPController : MonoBehaviour
             }
         }
 
-        // *** ÖNEMLÝ KISIM: YENÝ LEAN BAÞLANGICI TESPÝTÝ ***
-        // Önceki frame’de hedef merkezde miydi?
+        // *** ï¿½NEMLï¿½ KISIM: YENï¿½ LEAN BAï¿½LANGICI TESPï¿½Tï¿½ ***
+        // ï¿½nceki frameï¿½de hedef merkezde miydi?
         bool wasCenteredTarget = Mathf.Abs(_currentLeanTarget) < 0.001f;
-        // Bu frame’de lean baþlýyor mu?
+        // Bu frameï¿½de lean baï¿½lï¿½yor mu?
         bool willLeanNow = Mathf.Abs(targetLean) > 0.001f;
 
         if (willLeanNow && wasCenteredTarget)
         {
-            // Tam bu frame'de, "lean yok" durumundan "lean var" durumuna geçiyoruz
-            // Yani yeni lean'in referans açýsýný kaydet
+            // Tam bu frame'de, "lean yok" durumundan "lean var" durumuna geï¿½iyoruz
+            // Yani yeni lean'in referans aï¿½ï¿½sï¿½nï¿½ kaydet
             _leanStartYaw = _yaw;
         }
         // *** SON ***
 
-        // eðer target deðiþtiyse anim timer sýfýrla
+        // eï¿½er target deï¿½iï¿½tiyse anim timer sï¿½fï¿½rla
         if (Mathf.Abs(targetLean - _currentLeanTarget) > 0.001f)
         {
             _currentLeanTarget = targetLean;
             _leanAnimT = 0f;
         }
 
-        // hedefe doðru anim zamaný ilerlet
+        // hedefe doï¿½ru anim zamanï¿½ ilerlet
         if (Mathf.Abs(_leanValue - _currentLeanTarget) > 0.0001f)
         {
             float dur = Mathf.Max(0.0001f, leanLerpDuration);
@@ -1426,24 +1429,24 @@ public class FPController : MonoBehaviour
             _leanAnimT = 1f;
         }
 
-        // lean deðerini hedefe doðru lerple
+        // lean deï¿½erini hedefe doï¿½ru lerple
         _leanValue = Mathf.Lerp(_leanValue, _currentLeanTarget, Time.deltaTime * leanSpeed);
 
         // lean animasyonu devam ediyor mu?
         _leanInProgress = (Mathf.Abs(_currentLeanTarget) > 0.001f) && (_leanAnimT < 1f);
 
-        // mouse look’un kilitli olup olmamasý
+        // mouse lookï¿½un kilitli olup olmamasï¿½
         _leanLookLocked = (Mathf.Abs(_currentLeanTarget) > 0.001f) &&
                           (_leanAnimT < Mathf.Clamp01(leanLookUnlockRatio));
 
-        // hareketi sadece tuþ basýlýyken blokla
+        // hareketi sadece tuï¿½ basï¿½lï¿½yken blokla
         _blockMovementForLean = (!leanBlockedByState && Mathf.Abs(targetLean) > 0.001f);
     }
 
 
     void ApplyLeanCamera()
     {
-        // gövdeyi yana kaydýrma
+        // gï¿½vdeyi yana kaydï¿½rma
         if (moveBodyWithLean && controller != null)
         {
             if (Mathf.Abs(_leanValue - _prevLeanValueForBody) > 0.0001f)
@@ -1458,8 +1461,8 @@ public class FPController : MonoBehaviour
         if (!enableLean || cameraPivot == null)
             return;
 
-        // her durumda kamerayý hedeften merkeze/lean pozuna doðru lerple
-        // leanValue 0’a yaklaþtýkça targetX ve targetRoll da merkeze yaklaþacak
+        // her durumda kamerayï¿½ hedeften merkeze/lean pozuna doï¿½ru lerple
+        // leanValue 0ï¿½a yaklaï¿½tï¿½kï¿½a targetX ve targetRoll da merkeze yaklaï¿½acak
 
         // pozisyon X offset
         Vector3 lp = cameraPivot.localPosition;
@@ -1467,7 +1470,7 @@ public class FPController : MonoBehaviour
         lp.x = Mathf.Lerp(lp.x, targetX, Time.deltaTime * leanSpeed);
         cameraPivot.localPosition = lp;
 
-        // roll (Z ekseni), pitch / yaw’a dokunmuyoruz
+        // roll (Z ekseni), pitch / yawï¿½a dokunmuyoruz
         Vector3 e = cameraPivot.localEulerAngles;
         float targetRoll = -_leanValue * leanAngle;
         e.z = Mathf.LerpAngle(e.z, targetRoll, Time.deltaTime * leanSpeed);

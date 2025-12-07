@@ -7,7 +7,9 @@ public class TrainController : MonoBehaviour
     [SerializeField] private float accelerationRate = 0.5f;
     [SerializeField] private float brakeForce = 2.0f;
     [SerializeField] private float rollingResistance = 0.1f;
-
+    public Vector3 TrainVelocity { get; private set; }
+    private Rigidbody rb;
+    
     [Header("VİTES AYARLARI")]
     [SerializeField] private int currentGear = 1;   // 1 ileri, -1 geri, 0 boş
     [SerializeField] private int maxGear = 1;
@@ -24,6 +26,12 @@ public class TrainController : MonoBehaviour
 
     [Header("Kontrol Durumu")]
     public bool isControlledByPlayer = false;
+
+    void Start()
+    {
+
+        rb = GetComponent<Rigidbody>();
+    }
 
     void Update()
     {
@@ -93,7 +101,10 @@ public class TrainController : MonoBehaviour
             currentSpeed = 0f;
 
         // Hareket
-        transform.position += transform.forward * currentSpeed * Time.fixedDeltaTime;
+        rb.MovePosition(rb.position + transform.forward * currentSpeed * Time.fixedDeltaTime);
+
+        
+        TrainVelocity = rb.velocity;
     }
 
     public float GetCurrentSpeed()
