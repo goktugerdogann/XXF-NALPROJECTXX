@@ -1,48 +1,44 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-public enum ShopType
+namespace Economy
 {
-    Cheap,
-    Premium,
-    Mixed,
-    Wholesale
-}
+    [CreateAssetMenu(fileName = "ShopData", menuName = "Economy/ShopData")]
+    public class ShopData : ScriptableObject
+    {
+        public string id;
+        public string displayName;
 
-[Serializable]
-public class ShopFishSlot
-{
-    [Header("Fish")]
-    public FishDef fish;      // which fish can appear in this shop
+        [Header("Fish pool for this shop")]
+        public List<FishDef> possibleFish = new List<FishDef>();
 
-    [Header("Quantity Range (kg)")]
-    public int minQty = 10;
-    public int maxQty = 100;
+        [Header("How many fish types per day")]
+        public int minFishTypes = 2;
+        public int maxFishTypes = 5;
 
-    [Header("Price Multiplier Range (relative to fish.basePrice)")]
-    public float priceMinMul = 0.8f;
-    public float priceMaxMul = 1.2f;
-}
+        [Header("Stock range per fish (kg)")]
+        public int minStockKg = 10;
+        public int maxStockKg = 80;
 
-[CreateAssetMenu(fileName = "ShopData", menuName = "Game/Shop Data")]
-public class ShopData : ScriptableObject
-{
-    [Header("Identity")]
-    public string id;            // internal id, example: "Balikci_A_01"
-    public string displayName;   // UI name, example: "Ali's Fish Shop"
-    public ShopType shopType;
+        [Header("Price random range (per fish)")]
+        public float minPriceMul = 0.7f;
+        public float maxPriceMul = 1.3f;
 
-    [Header("Dialogues")]
-    public ShopDialogueSet dialogue;
+        [Header("Price bias for this shop (applied to all fish)")]
+        public float shopPriceBias = 1.0f;
 
-    [Header("Fish Configuration")]
-    public List<ShopFishSlot> possibleFish = new List<ShopFishSlot>();
-    public int minFishCount = 2; // how many fish types minimum today
-    public int maxFishCount = 4; // how many fish types maximum today
+        [Header("Bargain slider config (multiplier of total)")]
+        public float bargainMinTotalMul = 0.6f; // 60 percent of base
+        public float bargainMaxTotalMul = 1.0f; // 100 percent of base
 
-    [Header("Negotiation Settings")]
-    public int angerLimit = 3;          // how many bad offers before ban
-    public float lowOfferThreshold = 0.7f;     // offer < unitPrice * this => too low
-    public float counterOfferThreshold = 0.9f; // offer between this and 1.0 => counter
+        [Header("Npc mood weights for this shop")]
+        public float happyWeight = 1f;
+        public float neutralWeight = 2f;
+        public float annoyedWeight = 1f;
+        public float angryWeight = 0.5f;
+
+        [Header("Npc visuals")]
+        public Sprite npcPortrait;
+
+    }
 }

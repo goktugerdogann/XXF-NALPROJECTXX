@@ -1,16 +1,23 @@
 using UnityEngine;
 
-[CreateAssetMenu(fileName = "FishDef", menuName = "Game/Fish Def")]
-public class FishDef : ScriptableObject
+namespace Economy
 {
-    [Header("Identity")]
-    public string id;          // internal id, example: "cipura"
-    public string displayName; // shown in UI, example: "Cipura"
+    [CreateAssetMenu(fileName = "FishDef", menuName = "Economy/FishDef")]
+    public class FishDef : ScriptableObject
+    {
+        public string id;
+        public string displayName;
+        public Sprite icon;
 
-    [Header("Visual")]
-    public Sprite icon;        // you will assign the fish sprite here
+        [Header("Economy")]
+        public float basePricePerKg = 10f;
 
-    [Header("Economy")]
-    public float basePrice;    // reference price per kg
-    public int rarity;         // 1 = common, 5 = very rare (optional)
+        [Header("Info Texts")]
+        [TextArea(2, 4)]
+        public string description;
+        [TextArea(2, 4)]
+        public string bestTownsInfo;
+        [TextArea(2, 4)]
+        public string tips;
+    }
 }

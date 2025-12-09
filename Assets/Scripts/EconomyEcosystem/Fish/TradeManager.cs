@@ -1,206 +1,233 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
-public class TradeManager : MonoBehaviour
+namespace Economy
 {
-    public static TradeManager Instance;
-
-    [Header("Shops in this town")]
-    public List<ShopData> allShopsInTown = new List<ShopData>();
-
-    [Header("Runtime state (read-only from UI)")]
-    public ShopRuntimeState currentShop;
-
-    [Header("Events")]
-    // Called when a shop is opened and stock is generated
-    public Action<ShopRuntimeState> OnShopOpened;
-    // Called when NPC responds to an offer
-    public Action<NpcResponseType, string, float> OnNpcResponse;
-    // NpcResponseType, selectedDialogueLine, optionalCounterPricePerKg
-
-    void Awake()
+    public class TradeManager : MonoBehaviour
     {
-        if (Instance != null && Instance != this)
+        public static TradeManager Instance { get; private set; }
+
+        [Header("Debug")]
+        public bool debugLogs = true;
+
+        public ShopRuntimeState CurrentShop { get; private set; }
+
+        public event Action<ShopRuntimeState> OnShopOpened;
+        public event Action<NpcResponseType, string> OnNpcResponse;
+
+        void Awake()
         {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-    }
-
-    // Call this when player enters a shop trigger
-    public void EnterShop(ShopData shopData)
-    {
-        if (shopData == null)
-        {
-            Debug.LogError("TradeManager.EnterShop called with null shopData");
-            return;
-        }
-
-        currentShop = new ShopRuntimeState();
-        currentShop.data = shopData;
-        currentShop.angerLevel = 0;
-        GenerateStockForToday(currentShop);
-
-        // pick a greet line
-        string greet = PickRandomLine(shopData.dialogue != null ? shopData.dialogue.greetLines : null);
-
-        if (OnShopOpened != null)
-        {
-            OnShopOpened.Invoke(currentShop);
-        }
-
-        if (OnNpcResponse != null && !string.IsNullOrEmpty(greet))
-        {
-            OnNpcResponse.Invoke(NpcResponseType.Accept, greet, 0f);
-        }
-    }
-
-    // Generate stock for the current day (basic version)
-    void GenerateStockForToday(ShopRuntimeState shopState)
-    {
-        shopState.currentStock.Clear();
-
-        ShopData data = shopState.data;
-        if (data == null)
-            return;
-
-        if (data.possibleFish == null || data.possibleFish.Count == 0)
-            return;
-
-        int minCount = Mathf.Clamp(data.minFishCount, 1, data.possibleFish.Count);
-        int maxCount = Mathf.Clamp(data.maxFishCount, minCount, data.possibleFish.Count);
-        int fishCount = UnityEngine.Random.Range(minCount, maxCount + 1);
-
-        // create a working list to pick from
-        List<ShopFishSlot> pool = new List<ShopFishSlot>(data.possibleFish);
-
-        for (int i = 0; i < fishCount && pool.Count > 0; i++)
-        {
-            int index = UnityEngine.Random.Range(0, pool.Count);
-            ShopFishSlot slot = pool[index];
-            pool.RemoveAt(index);
-
-            if (slot.fish == null)
-                continue;
-
-            RuntimeFishStock stock = new RuntimeFishStock();
-            stock.fish = slot.fish;
-
-            int qty = UnityEngine.Random.Range(slot.minQty, slot.maxQty + 1);
-            stock.quantityKg = Mathf.Max(0, qty);
-
-            float mul = UnityEngine.Random.Range(slot.priceMinMul, slot.priceMaxMul);
-            if (stock.fish.basePrice <= 0f)
+            if (Instance != null && Instance != this)
             {
-                stock.unitPrice = 1f * mul;
+                Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+        }
+
+        // Call this when player interacts with a shop in the world
+        public void EnterShop(ShopData shopData)
+        {
+            if (shopData == null)
+            {
+                Debug.LogError("TradeManager.EnterShop called with null ShopData");
+                return;
+            }
+
+            CurrentShop = GenerateRuntimeShop(shopData);
+
+            if (debugLogs)
+            {
+                Debug.Log("Entered shop: " + shopData.displayName);
+            }
+
+            OnShopOpened?.Invoke(CurrentShop);
+
+            // Simple greeting based on mood
+            string line = GetGreetingLine(CurrentShop.mood);
+            OnNpcResponse?.Invoke(NpcResponseType.Greeting, line);
+        }
+
+        ShopRuntimeState GenerateRuntimeShop(ShopData shopData)
+        {
+            ShopRuntimeState state = new ShopRuntimeState();
+            state.data = shopData;
+
+            // Mood
+            state.mood = PickRandomMood(shopData);
+
+            // Fish list
+            List<FishDef> pool = new List<FishDef>(shopData.possibleFish);
+            int count = Mathf.Clamp(Random.Range(shopData.minFishTypes, shopData.maxFishTypes + 1), 0, pool.Count);
+
+            for (int i = 0; i < count; i++)
+            {
+                if (pool.Count == 0) break;
+
+                int index = Random.Range(0, pool.Count);
+                FishDef def = pool[index];
+                pool.RemoveAt(index);
+
+                RuntimeFishStock runtimeStock = new RuntimeFishStock();
+                runtimeStock.fish = def;
+
+                runtimeStock.quantityKg = Random.Range(shopData.minStockKg, shopData.maxStockKg + 1);
+
+                float mul = Random.Range(shopData.minPriceMul, shopData.maxPriceMul);
+                mul *= shopData.shopPriceBias;
+
+                runtimeStock.unitPricePerKg = def.basePricePerKg * mul;
+
+                state.currentStock.Add(runtimeStock);
+            }
+
+            return state;
+        }
+
+        NpcMood PickRandomMood(ShopData data)
+        {
+            float total =
+                data.happyWeight +
+                data.neutralWeight +
+                data.annoyedWeight +
+                data.angryWeight;
+
+            if (total <= 0.01f)
+                return NpcMood.Neutral;
+
+            float r = Random.value * total;
+
+            if (r < data.happyWeight) return NpcMood.Happy;
+            r -= data.happyWeight;
+
+            if (r < data.neutralWeight) return NpcMood.Neutral;
+            r -= data.neutralWeight;
+
+            if (r < data.annoyedWeight) return NpcMood.Annoyed;
+            // else
+            return NpcMood.Angry;
+        }
+
+        string GetGreetingLine(NpcMood mood)
+        {
+            switch (mood)
+            {
+                case NpcMood.Happy:
+                    return "Welcome, fish are very fresh today.";
+                case NpcMood.Annoyed:
+                    return "Say what you want, I am busy.";
+                case NpcMood.Angry:
+                    return "Do not waste my time.";
+                default:
+                    return "Hello.";
+            }
+        }
+
+        public BargainResult EvaluateBargain(
+            RuntimeFishStock stock,
+            int quantityKg,
+            float baseTotal,
+            float desiredTotal)
+        {
+            BargainResult result = new BargainResult();
+            result.baseTotal = baseTotal;
+            result.desiredTotal = desiredTotal;
+
+            if (CurrentShop == null || stock == null || quantityKg <= 0 || baseTotal <= 0.01f)
+            {
+                result.finalTotal = baseTotal;
+                result.responseType = NpcResponseType.Angry;
+                result.npcLine = "I do not like this offer.";
+                return result;
+            }
+
+            // Clamp desiredTotal to slider range (defensive)
+            float minAllowed = baseTotal * CurrentShop.data.bargainMinTotalMul;
+            float maxAllowed = baseTotal * CurrentShop.data.bargainMaxTotalMul;
+            desiredTotal = Mathf.Clamp(desiredTotal, minAllowed, maxAllowed);
+
+            // How hard the player is pushing
+            float t = 0f;
+            if (Mathf.Abs(baseTotal - desiredTotal) > 0.01f)
+            {
+                float fullDiscount = baseTotal - minAllowed; // max possible discount
+                float requestedDiscount = baseTotal - desiredTotal;
+                t = Mathf.Clamp01(requestedDiscount / Mathf.Max(0.01f, fullDiscount));
+            }
+
+            // Mood controls how much of this discount is accepted
+            float moodFactor = GetMoodDiscountFactor(CurrentShop.mood);
+
+            // finalTotal between baseTotal and desiredTotal
+            float lerpFactor = t * moodFactor;
+
+            float finalTotal = Mathf.Lerp(baseTotal, desiredTotal, lerpFactor);
+
+            // Small randomness so it does not feel robotic
+            float noise = Random.Range(-0.02f, 0.02f); // +-2 percent
+            finalTotal *= 1f + noise;
+            finalTotal = Mathf.Clamp(finalTotal, minAllowed, baseTotal);
+
+            result.finalTotal = finalTotal;
+
+            // Response line
+            if (Mathf.Approximately(finalTotal, baseTotal))
+            {
+                result.responseType = NpcResponseType.Angry;
+                result.npcLine = "No discount. Take it or leave it.";
+            }
+            else if (finalTotal <= desiredTotal + 0.01f)
+            {
+                result.responseType = NpcResponseType.Accept;
+                result.npcLine = "Alright, I will give it for " + finalTotal.ToString("0") + ".";
             }
             else
             {
-                stock.unitPrice = stock.fish.basePrice * mul;
+                result.responseType = NpcResponseType.Counter;
+                result.npcLine = "I can go down to " + finalTotal.ToString("0") + ". Any lower would make me angry.";
             }
 
-            shopState.currentStock.Add(stock);
-        }
-    }
-
-    // UI will call this when player makes an offer for a specific fish
-    public void PlayerOffer(RuntimeFishStock targetStock, int offerQuantityKg, float offerPricePerKg)
-    {
-        if (currentShop == null || currentShop.data == null)
-        {
-            Debug.LogWarning("PlayerOffer called but no current shop is active.");
-            return;
+            OnNpcResponse?.Invoke(result.responseType, result.npcLine);
+            return result;
         }
 
-        if (targetStock == null)
+        float GetMoodDiscountFactor(NpcMood mood)
         {
-            Debug.LogWarning("PlayerOffer called with null targetStock.");
-            return;
-        }
-
-        if (offerQuantityKg <= 0 || offerPricePerKg <= 0f)
-        {
-            Debug.LogWarning("PlayerOffer called with invalid quantity or price.");
-            return;
-        }
-
-        if (offerQuantityKg > targetStock.quantityKg)
-        {
-            // cannot buy more than available
-            string line = "I do not have that much fish.";
-            if (OnNpcResponse != null)
+            switch (mood)
             {
-                OnNpcResponse.Invoke(NpcResponseType.TooLow, line, 0f);
+                case NpcMood.Happy:
+                    return 0.9f; // almost full requested discount
+                case NpcMood.Neutral:
+                    return 0.6f;
+                case NpcMood.Annoyed:
+                    return 0.3f;
+                case NpcMood.Angry:
+                    return 0.1f;
+                default:
+                    return 0.5f;
             }
-            return;
         }
 
-        ShopData data = currentShop.data;
-
-        float unitPrice = targetStock.unitPrice;
-        float lowThreshold = unitPrice * data.lowOfferThreshold;
-        float counterThreshold = unitPrice * data.counterOfferThreshold;
-
-        NpcResponseType responseType;
-        string dialogueLine = string.Empty;
-        float counterPricePerKg = 0f;
-
-        if (offerPricePerKg >= unitPrice)
+        public void CompleteTrade(RuntimeFishStock stock, int quantityKg, float totalPaid)
         {
-            // accept
-            responseType = NpcResponseType.Accept;
-            dialogueLine = PickRandomLine(data.dialogue != null ? data.dialogue.offerOkLines : null);
+            if (stock == null || quantityKg <= 0)
+                return;
 
-            // apply sale
-            targetStock.quantityKg -= offerQuantityKg;
-            if (targetStock.quantityKg < 0)
-                targetStock.quantityKg = 0;
-        }
-        else if (offerPricePerKg >= counterThreshold)
-        {
-            // counter offer
-            responseType = NpcResponseType.Counter;
-            dialogueLine = PickRandomLine(data.dialogue != null ? data.dialogue.counterOfferLines : null);
+            stock.quantityKg -= quantityKg;
+            if (stock.quantityKg < 0)
+                stock.quantityKg = 0;
 
-            // simple example: counter price = average of offer and unit
-            counterPricePerKg = (offerPricePerKg + unitPrice) * 0.5f;
-        }
-        else if (offerPricePerKg >= lowThreshold)
-        {
-            // low, but not extremely low: angry but not ban
-            responseType = NpcResponseType.Angry;
-            currentShop.angerLevel += 1;
-            dialogueLine = PickRandomLine(data.dialogue != null ? data.dialogue.angryLines : null);
-        }
-        else
-        {
-            // very low offer: strong anger
-            responseType = NpcResponseType.TooLow;
-            currentShop.angerLevel += 2;
-            dialogueLine = PickRandomLine(data.dialogue != null ? data.dialogue.offerLowLines : null);
-        }
+            if (debugLogs)
+            {
+                Debug.Log("Player bought " + quantityKg + " kg of " +
+                          stock.fish.displayName + " for total " + totalPaid.ToString("0"));
+            }
 
-        if (currentShop.angerLevel >= data.angerLimit)
-        {
-            responseType = NpcResponseType.Ban;
-            dialogueLine = PickRandomLine(data.dialogue != null ? data.dialogue.banLines : null);
+            OnNpcResponse?.Invoke(NpcResponseType.Accept, "Deal. Pleasure doing business.");
+            // TODO: plug player money and inventory here.
         }
-
-        if (OnNpcResponse != null)
-        {
-            OnNpcResponse.Invoke(responseType, dialogueLine, counterPricePerKg);
-        }
-    }
-
-    // Helper for picking random dialogue line
-    string PickRandomLine(List<string> list)
-    {
-        if (list == null || list.Count == 0)
-            return string.Empty;
-
-        int index = UnityEngine.Random.Range(0, list.Count);
-        return list[index];
     }
 }

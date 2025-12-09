@@ -1,27 +1,47 @@
+using System;
 using System.Collections.Generic;
+using UnityEngine;
 
-public enum NpcResponseType
+namespace Economy
 {
-    Accept,
-    Counter,
-    TooLow,
-    Angry,
-    Ban
-}
+    public enum NpcMood
+    {
+        Happy,
+        Neutral,
+        Annoyed,
+        Angry
+    }
 
-[System.Serializable]
-public class RuntimeFishStock
-{
-    public FishDef fish;
-    public int quantityKg;
-    public float unitPrice; // final price per kg for this shop today
-}
+    public enum NpcResponseType
+    {
+        Greeting,
+        Accept,
+        Counter,
+        Angry,
+        Ban
+    }
 
-public class ShopRuntimeState
-{
-    public ShopData data;
-    public List<RuntimeFishStock> currentStock = new List<RuntimeFishStock>();
-    public int angerLevel = 0;
+    [Serializable]
+    public class RuntimeFishStock
+    {
+        public FishDef fish;
+        public int quantityKg;
+        public float unitPricePerKg;
+    }
 
-    // optional: you can extend this later (lastDayGenerated, etc.)
+    public class ShopRuntimeState
+    {
+        public ShopData data;
+        public NpcMood mood;
+        public List<RuntimeFishStock> currentStock = new List<RuntimeFishStock>();
+    }
+
+    public struct BargainResult
+    {
+        public float baseTotal;
+        public float desiredTotal;
+        public float finalTotal;
+        public NpcResponseType responseType;
+        public string npcLine;
+    }
 }

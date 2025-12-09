@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using Cinemachine;
+using Economy;
 
 public class VillagerInteractionCam : MonoBehaviour
 {
@@ -21,6 +22,9 @@ public class VillagerInteractionCam : MonoBehaviour
     public float enterMouseUnlockDelay = 0.9f;
     public float exitMovementUnlockDelay = 0.9f;
 
+    [Header("Shop")]
+    public ShopData shopData; // Bu koye bagli dukan datasini inspector'dan ver
+
     bool inConversation = false;
     bool playerInRange = false;
 
@@ -31,12 +35,10 @@ public class VillagerInteractionCam : MonoBehaviour
     {
         if (!playerInRange) return;
 
-        if (Input.GetKeyDown(interactKey))
+        // Sadece giris, cikis yok
+        if (Input.GetKeyDown(interactKey) && !inConversation)
         {
-            if (!inConversation)
-                EnterConversation();
-            else
-                ExitConversation();
+            EnterConversation();
         }
     }
 
@@ -51,8 +53,11 @@ public class VillagerInteractionCam : MonoBehaviour
         if (!other.CompareTag("Player")) return;
         playerInRange = false;
 
+        // Oyuncu alanin disina cikarsa ve henuz cikis yapilmadiysa
         if (inConversation)
+        {
             ExitConversation();
+        }
     }
 
     public void EnterConversation()
@@ -66,36 +71,37 @@ public class VillagerInteractionCam : MonoBehaviour
             exitRoutine = null;
         }
 
-        // Lock inventory if you have that logic
+        // Envanteri kilitle
         if (InventoryUI.Instance != null)
         {
             InventoryUI.Instance.blockInventory = true;
             InventoryUI.Instance.ForceCloseFromConversation();
         }
 
-        // Hide held item instantly
+        // Elde tutulan item'i sakla
         if (heldItemAnimator != null)
             heldItemAnimator.PlayHide();
 
-        // Hide placement preview ghost
+        // Placement ghost'u kapat
         if (interactionRaycaster != null)
             interactionRaycaster.BlockPlacementForConversation(true);
 
-        // Hide player body
+        // Player modelini gizle
         if (playerVisualHider != null)
             playerVisualHider.SetHidden(true);
 
-        // Freeze movement
+        // Hareketi dondur
         if (playerController != null)
             playerController.freezeMovement = true;
 
-        // Switch cameras
+        // Kameralari degistir
         if (villagerVCam != null && mainVCam != null)
         {
             villagerVCam.Priority = 30;
             mainVCam.Priority = 10;
         }
 
+        // Blend boyunca mouse kilitli
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
 
@@ -113,12 +119,15 @@ public class VillagerInteractionCam : MonoBehaviour
             enterRoutine = null;
         }
 
+        // Ana kameraya don
         if (villagerVCam != null && mainVCam != null)
         {
             mainVCam.Priority = 30;
             villagerVCam.Priority = 10;
         }
 
+        // Mouse'u tekrar kilitliyoruz;
+        // coroutine sonunda hareket acilacak.
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
 
@@ -127,12 +136,24 @@ public class VillagerInteractionCam : MonoBehaviour
 
     IEnumerator EnterMouseUnlockCoroutine()
     {
+        // Kamera blend suresi
         yield return new WaitForSeconds(enterMouseUnlockDelay);
 
-        if (!inConversation) yield break;
+        if (!inConversation)
+        {
+            enterRoutine = null;
+            yield break;
+        }
 
+        // Artik mouse serbest, UI acilabilir
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+
+        // Tam bu noktada shop panelini aciyoruz
+        if (TradeManager.Instance != null && shopData != null)
+        {
+            TradeManager.Instance.EnterShop(shopData);
+        }
 
         enterRoutine = null;
     }
@@ -141,12 +162,15 @@ public class VillagerInteractionCam : MonoBehaviour
     {
         yield return new WaitForSeconds(exitMovementUnlockDelay);
 
+        // Character hareketi ac
         if (playerController != null)
             playerController.freezeMovement = false;
 
+        // Player modelini tekrar goster
         if (playerVisualHider != null)
             playerVisualHider.SetHidden(false);
 
+        // Elde tutulan item'i geri getir
         if (heldItemAnimator != null)
             heldItemAnimator.PlayShow();
 
