@@ -25,7 +25,7 @@ public class EquipManager : MonoBehaviour
     GameObject equippedInstance;
     bool currentFromInventory = false;
 
-    bool isSwitching = false; // slot animasyonu çalýþýrken tekrar basýlmasýn
+    bool isSwitching = false; // prevent spam while switching
 
     void Awake()
     {
@@ -61,26 +61,30 @@ public class EquipManager : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Alpha4)) EquipFromSlot(3);
     }
 
-    // check if we are holding a weapon
     public bool IsHoldingWeapon()
     {
         if (currentItem == null) return false;
         return currentItem.isWeapon;
     }
 
-    // check if we are holding the repair tool
     public bool IsHoldingRepairTool()
     {
         if (currentItem == null) return false;
         return currentItem.isRepairTool;
     }
 
-    // BURASI GÜNCELLENDÝ
     public void EquipFromSlot(int slotIndex)
     {
         if (isSwitching) return;
 
-        // zaten ayný slotun ayni itemini elde tutuyorsak HÝÇBÝR ÞEY YAPMA
+        // if this is called from inventory UI, close it immediately
+        var ui = InventoryUI.Instance;
+        if (ui != null && ui.IsOpen)
+        {
+            ui.CloseInventory();
+        }
+
+        // already holding exactly this slot's item -> do nothing
         if (inventory != null &&
             slotIndex >= 0 && slotIndex < inventory.slots.Count)
         {
@@ -90,9 +94,9 @@ public class EquipManager : MonoBehaviour
                 slotIndex == currentSlotIndex &&
                 currentItem == slot.item &&
                 equippedInstance != null &&
-                (currentItem == null || !currentItem.isPlaceable)) // normal eldeki item (preview deðil)
+                (currentItem == null || !currentItem.isPlaceable))
             {
-                return; // aynýsýný zaten tutuyoruz, animasyon çalýþmasýn
+                return;
             }
         }
 
@@ -120,10 +124,10 @@ public class EquipManager : MonoBehaviour
 
         var slot = inventory.slots[slotIndex];
 
-        // ---------------- EMPTY SLOT  ELDEKINI HIDE ANIM ÝLE KAPAT ----------------
+        // ---------------- EMPTY SLOT: hide current, clear state ----------------
         if (slot.IsEmpty)
         {
-            // Eldeki item varsa önce içeri girme animasyonu
+            // play hide anim for current item if any
             yield return HideCurrentIfAny();
 
             currentItem = null;
@@ -133,14 +137,13 @@ public class EquipManager : MonoBehaviour
             if (SaveManager.Instance != null)
                 SaveManager.Instance.SaveGame();
 
-            if (InventoryUI.Instance != null && InventoryUI.Instance.IsOpen)
-                InventoryUI.Instance.CloseInventory();
+            // inventory was already closed at the start if it was open
 
             isSwitching = false;
             yield break;
         }
 
-        // ---------------- SLOTTA ITEM VAR ----------------
+        // ---------------- SLOT HAS ITEM ----------------
         ItemData data = slot.item;
         if (data == null)
         {
@@ -148,29 +151,25 @@ public class EquipManager : MonoBehaviour
             yield break;
         }
 
-        // önce ESKI eldeki item içeri girsin (hide anim)
+        // hide old equipped item first
         yield return HideCurrentIfAny();
 
         currentItem = data;
         currentSlotIndex = slotIndex;
         currentFromInventory = true;
 
-        // ---------------- PLACEABLE (PREVIEW) LOGIC ----------------
+        // ---------------- PLACEABLE (PREVIEW) ----------------
         if (currentItem.isPlaceable)
         {
-            // Normal eldeki item çoktan hide animle saklandý
             if (ray != null)
-                ray.BeginPlaceFromInventory(currentItem); // preview objesi için ANIM YOK
+                ray.BeginPlaceFromInventory(currentItem);
 
-            var ui = InventoryUI.Instance != null ? InventoryUI.Instance : FindObjectOfType<InventoryUI>();
-            if (ui != null && ui.IsOpen)
-                ui.CloseInventory();
-
+            // inventory UI already closed in EquipFromSlot if it was open
             isSwitching = false;
             yield break;
         }
 
-        // ---------------- NORMAL EQUIP (WEAPON / TOOL VS.) ----------------
+        // ---------------- NORMAL EQUIP (WEAPON / TOOL ETC.) ----------------
         GameObject prefabToUse = currentItem.equippedPrefab != null
             ? currentItem.equippedPrefab
             : currentItem.worldPrefab;
@@ -201,20 +200,20 @@ public class EquipManager : MonoBehaviour
         foreach (var col in equippedInstance.GetComponentsInChildren<Collider>())
             col.enabled = false;
 
-        // ELÝME GELME ANÝMASYONU (her zaman doðru objeyi animle)
+        // show anim for new equipped item
         if (heldAnimator != null)
         {
             heldAnimator.SetCurrentItem(equippedInstance.transform);
             heldAnimator.PlayShow();
         }
 
-        if (InventoryUI.Instance != null && InventoryUI.Instance.IsOpen)
-            InventoryUI.Instance.CloseInventory();
+        // inventory UI already handled at the start
 
         isSwitching = false;
     }
-        // Elde bir þey varsa hide anim oynatýp sonra destroy eder
-        IEnumerator HideCurrentIfAny()
+
+    // hide current with anim, then destroy
+    IEnumerator HideCurrentIfAny()
     {
         if (equippedInstance == null)
         {
@@ -224,7 +223,6 @@ public class EquipManager : MonoBehaviour
 
         if (heldAnimator != null)
         {
-            // hangi objeyi saklayacaðýmýzý net söyle
             heldAnimator.SetCurrentItem(equippedInstance.transform);
 
             bool done = false;
@@ -240,11 +238,8 @@ public class EquipManager : MonoBehaviour
         ClearEquippedVisualImmediate();
     }
 
-
-    // Eskiden ClearEquippedVisual ne yapýyorsa bu onu direkt yapýyor (anim yok)
     void ClearEquippedVisualImmediate()
     {
-        // notify animator that equipped instance is destroyed
         if (heldAnimator != null)
         {
             heldAnimator.OnEquippedDestroyed();
@@ -257,14 +252,11 @@ public class EquipManager : MonoBehaviour
         }
     }
 
-
-    // Dýþarýdan çaðýrýlan eski isim kalsýn, yapý bozulmasýn
     public void ClearEquippedVisual()
     {
         ClearEquippedVisualImmediate();
     }
 
-    // called when player places a placeable item or drops an equipped item
     public void ConsumeEquippedItemOne()
     {
         if (!currentFromInventory) return;
@@ -334,7 +326,6 @@ public class EquipManager : MonoBehaviour
         // now consume one from inventory
         ConsumeEquippedItemOne();
 
-        // Drop'ta eldeki model direkt kaybolsun (istersen bunu da animli yaparýz sonra)
         ClearEquippedVisualImmediate();
         currentItem = null;
         currentFromInventory = false;
