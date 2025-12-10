@@ -25,7 +25,7 @@ public class EquipManager : MonoBehaviour
     GameObject equippedInstance;
     bool currentFromInventory = false;
 
-    bool isSwitching = false; // prevent spam while switching
+    bool isSwitching = false;
 
     void Awake()
     {
@@ -54,6 +54,10 @@ public class EquipManager : MonoBehaviour
         if (InventoryUI.Instance != null && InventoryUI.Instance.IsOpen)
             return;
 
+        // if any villager conversation is active, do not process hotbar keys
+        if (VillagerInteractionCam.AnyConversationActive)
+            return;
+
         // hotbar 1-4
         if (Input.GetKeyDown(KeyCode.Alpha1)) EquipFromSlot(0);
         if (Input.GetKeyDown(KeyCode.Alpha2)) EquipFromSlot(1);
@@ -77,14 +81,12 @@ public class EquipManager : MonoBehaviour
     {
         if (isSwitching) return;
 
-        // if this is called from inventory UI, close it immediately
         var ui = InventoryUI.Instance;
         if (ui != null && ui.IsOpen)
         {
             ui.CloseInventory();
         }
 
-        // already holding exactly this slot's item -> do nothing
         if (inventory != null &&
             slotIndex >= 0 && slotIndex < inventory.slots.Count)
         {
@@ -124,10 +126,9 @@ public class EquipManager : MonoBehaviour
 
         var slot = inventory.slots[slotIndex];
 
-        // ---------------- EMPTY SLOT: hide current, clear state ----------------
+        // empty slot: hide current
         if (slot.IsEmpty)
         {
-            // play hide anim for current item if any
             yield return HideCurrentIfAny();
 
             currentItem = null;
@@ -137,13 +138,10 @@ public class EquipManager : MonoBehaviour
             if (SaveManager.Instance != null)
                 SaveManager.Instance.SaveGame();
 
-            // inventory was already closed at the start if it was open
-
             isSwitching = false;
             yield break;
         }
 
-        // ---------------- SLOT HAS ITEM ----------------
         ItemData data = slot.item;
         if (data == null)
         {
@@ -151,25 +149,24 @@ public class EquipManager : MonoBehaviour
             yield break;
         }
 
-        // hide old equipped item first
+        // hide old equipped item
         yield return HideCurrentIfAny();
 
         currentItem = data;
         currentSlotIndex = slotIndex;
         currentFromInventory = true;
 
-        // ---------------- PLACEABLE (PREVIEW) ----------------
+        // placeable -> preview mode
         if (currentItem.isPlaceable)
         {
             if (ray != null)
                 ray.BeginPlaceFromInventory(currentItem);
 
-            // inventory UI already closed in EquipFromSlot if it was open
             isSwitching = false;
             yield break;
         }
 
-        // ---------------- NORMAL EQUIP (WEAPON / TOOL ETC.) ----------------
+        // normal equipped item
         GameObject prefabToUse = currentItem.equippedPrefab != null
             ? currentItem.equippedPrefab
             : currentItem.worldPrefab;
@@ -200,19 +197,15 @@ public class EquipManager : MonoBehaviour
         foreach (var col in equippedInstance.GetComponentsInChildren<Collider>())
             col.enabled = false;
 
-        // show anim for new equipped item
         if (heldAnimator != null)
         {
             heldAnimator.SetCurrentItem(equippedInstance.transform);
             heldAnimator.PlayShow();
         }
 
-        // inventory UI already handled at the start
-
         isSwitching = false;
     }
 
-    // hide current with anim, then destroy
     IEnumerator HideCurrentIfAny()
     {
         if (equippedInstance == null)
@@ -323,7 +316,6 @@ public class EquipManager : MonoBehaviour
             }
         }
 
-        // now consume one from inventory
         ConsumeEquippedItemOne();
 
         ClearEquippedVisualImmediate();

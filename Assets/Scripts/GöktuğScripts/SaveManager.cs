@@ -1,4 +1,3 @@
-// SaveManager.cs
 using System.IO;
 using UnityEngine;
 using System.Collections.Generic;
@@ -37,18 +36,26 @@ public class SaveManager : MonoBehaviour
     [System.Serializable]
     public class SaveData
     {
+        public int money;  // saved money
         public List<InventorySlotData> inventory = new List<InventorySlotData>();
         public List<WorldItemData> worldItems = new List<WorldItemData>();
         public PlayerData player = new PlayerData();
     }
 
-    string SavePath => Path.Combine(Application.persistentDataPath, "placements.json");
+    string SavePath
+    {
+        get { return Path.Combine(Application.persistentDataPath, "placements.json"); }
+    }
 
     void Awake()
     {
         if (Instance == null)
         {
             Instance = this;
+
+            if (transform.parent != null)
+                transform.SetParent(null);
+
             DontDestroyOnLoad(gameObject);
         }
         else
@@ -67,6 +74,7 @@ public class SaveManager : MonoBehaviour
     {
         SaveData data = new SaveData();
 
+        // inventory
         if (Inventory.Instance != null)
         {
             var inv = Inventory.Instance;
@@ -91,6 +99,7 @@ public class SaveManager : MonoBehaviour
             }
         }
 
+        // world items
         PickupItem[] worldItems = FindObjectsOfType<PickupItem>();
         foreach (var p in worldItems)
         {
@@ -106,18 +115,30 @@ public class SaveManager : MonoBehaviour
             data.worldItems.Add(w);
         }
 
+        // player
         if (playerTransform != null)
         {
             data.player.position = playerTransform.position;
             data.player.rotation = playerTransform.rotation;
         }
 
+        // money
+        if (MoneyManager.Instance != null)
+        {
+            data.money = MoneyManager.Instance.CurrentMoney;
+        }
+        else
+        {
+            data.money = 0;
+        }
+
         string json = JsonUtility.ToJson(data, true);
         File.WriteAllText(SavePath, json);
 
-        Debug.Log("SaveManager: saved " + data.inventory.Count +
-                  " inventory slots, " + data.worldItems.Count +
-                  " world items. Path: " + SavePath);
+        Debug.Log("SaveManager: saved " +
+                  data.inventory.Count + " inventory slots, " +
+                  data.worldItems.Count + " world items, " +
+                  "money=" + data.money + ". Path: " + SavePath);
     }
 
     public void LoadGame()
@@ -125,6 +146,11 @@ public class SaveManager : MonoBehaviour
         if (!File.Exists(SavePath))
         {
             Debug.Log("SaveManager: no save file yet, starting fresh.");
+
+            // no save file, use starting money
+            if (MoneyManager.Instance != null)
+                MoneyManager.Instance.ResetToStartingMoney();
+
             return;
         }
 
@@ -133,9 +159,14 @@ public class SaveManager : MonoBehaviour
         if (data == null)
         {
             Debug.LogWarning("SaveManager: save file invalid.");
+
+            if (MoneyManager.Instance != null)
+                MoneyManager.Instance.ResetToStartingMoney();
+
             return;
         }
 
+        // inventory
         if (Inventory.Instance != null && data.inventory != null && data.inventory.Count > 0)
         {
             var inv = Inventory.Instance;
@@ -173,6 +204,7 @@ public class SaveManager : MonoBehaviour
             InventoryUI.Instance?.UpdateUI();
         }
 
+        // clear existing world items
         var existing = FindObjectsOfType<PickupItem>();
         foreach (var p in existing)
         {
@@ -180,6 +212,7 @@ public class SaveManager : MonoBehaviour
             Destroy(p.gameObject);
         }
 
+        // spawn saved world items
         if (data.worldItems != null)
         {
             foreach (var w in data.worldItems)
@@ -206,6 +239,7 @@ public class SaveManager : MonoBehaviour
             }
         }
 
+        // player
         if (playerTransform != null && data.player != null)
         {
             Vector3 pos = data.player.position + Vector3.up * loadSpawnYOffset;
@@ -213,10 +247,19 @@ public class SaveManager : MonoBehaviour
             playerTransform.rotation = data.player.rotation;
         }
 
+        // money
+        if (MoneyManager.Instance != null)
+        {
+            if (data.money > 0)
+                MoneyManager.Instance.SetMoney(data.money);
+            else
+                MoneyManager.Instance.ResetToStartingMoney();
+        }
+
         Debug.Log("SaveManager: loaded " +
                   (data.inventory != null ? data.inventory.Count : 0) +
                   " inventory slots, " +
                   (data.worldItems != null ? data.worldItems.Count : 0) +
-                  " world items.");
+                  " world items, money=" + data.money + ".");
     }
 }

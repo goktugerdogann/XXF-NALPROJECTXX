@@ -12,24 +12,122 @@ namespace Economy
         [Header("Debug")]
         public bool debugLogs = true;
 
-        [Header("Day System")]
-        [Tooltip("Gün indexi. Yeni güne geçince bunu 1 arttýr (AdvanceDay ile).")]
-        public int currentDayIndex = 0;
-
-        // Her shop için o güne ait state'i cache'liyoruz
-        class CachedShopState
-        {
-            public int dayIndex;
-            public ShopRuntimeState state;
-        }
-
-        Dictionary<ShopData, CachedShopState> cachedShops =
-            new Dictionary<ShopData, CachedShopState>();
-
+        // current in-use shop for UI
         public ShopRuntimeState CurrentShop { get; private set; }
+
+        // day system
+        public int currentDay = 0;
+
+        // one runtime state per shop per day
+        Dictionary<ShopData, ShopRuntimeState> shopCache =
+            new Dictionary<ShopData, ShopRuntimeState>();
 
         public event Action<ShopRuntimeState> OnShopOpened;
         public event Action<NpcResponseType, string> OnNpcResponse;
+
+        // greeting lines
+        string[] happyGreetLines =
+        {
+            "Welcome, fish are very fresh today.",
+            "Good to see you, the sea was kind today.",
+            "You came at the right time, I have great fish.",
+            "Ah, my favorite customer. Fresh catch just arrived."
+        };
+
+        string[] neutralGreetLines =
+        {
+            "Hello.",
+            "Yes? What do you need?",
+            "Take a look, maybe you will find something.",
+            "The day is calm, like the sea."
+        };
+
+        string[] annoyedGreetLines =
+        {
+            "Say what you want, I am busy.",
+            "Do not waste my time.",
+            "If you are not buying, do not stand in the way.",
+            "Hurry up, I do not have all day."
+        };
+
+        string[] angryGreetLines =
+        {
+            "Do not waste my time.",
+            "If you are here to haggle too much, leave.",
+            "I am not in the mood. Speak quickly.",
+            "You again? This better be quick."
+        };
+
+        // bargain lines
+        string[] angryRejectLines =
+        {
+            "This offer is an insult. I refuse.",
+            "If I sell for that price, I will starve.",
+            "No way. Go somewhere else with that price."
+        };
+
+        string[] noDiscountLines =
+        {
+            "No discount. Take it or leave it.",
+            "The price is firm. No haggling.",
+            "This is the real value. I cannot go lower."
+        };
+
+        string[] acceptLines =
+        {
+            "You bargained well, I will sell for ",
+            "Fine, for you I will make it ",
+            "All right, we have a deal for "
+        };
+
+        string[] counterLines =
+        {
+            "I cannot go that low, but I can do ",
+            "That is too low. How about ",
+            "I will lower it a bit. Let us say "
+        };
+
+        // bargain tuning
+        [Header("Bargain tuning")]
+        [Tooltip("offer/base >= easyAcceptMul -> direct accept")]
+        public float easyAcceptMul = 0.88f;   // about 42-48 accepted when base=48
+
+        [Tooltip("offer/base >= counterMinMul and < easyAcceptMul -> counter offer")]
+        public float counterMinMul = 0.83f;   // about 40-42 counter when base=48
+
+        // anger system
+        [Header("Anger system")]
+        [Tooltip("Above this value, shop will refuse to trade for the rest of the day")]
+        public float angerThreshold = 1.0f;
+
+        [Tooltip("How much anger to add on very low offer")]
+        public float angerIncreaseLowball = 0.6f;
+
+        [Tooltip("How much anger to add on normal counter situation")]
+        public float angerIncreaseCounter = 0.3f;
+
+        [Tooltip("How much anger to reduce on a good, fair deal")]
+        public float angerDecreaseOnGoodDeal = 0.2f;
+
+        // anger per shop runtime state
+        Dictionary<ShopRuntimeState, float> shopAnger =
+            new Dictionary<ShopRuntimeState, float>();
+
+        string RandomNpcLine(string[] pool)
+        {
+            if (pool == null || pool.Length == 0)
+                return "";
+            int idx = Random.Range(0, pool.Length);
+            return pool[idx];
+        }
+
+        string RandomNpcLineWithPrice(string[] pool, float price)
+        {
+            if (pool == null || pool.Length == 0)
+                return price.ToString("0") + ".";
+            int idx = Random.Range(0, pool.Length);
+            return pool[idx] + price.ToString("0") + ".";
+        }
 
         void Awake()
         {
@@ -42,18 +140,18 @@ namespace Economy
             Instance = this;
         }
 
-        // Dýþarýdan gün deðiþtirmek için çaðýrýrsýn (þimdilik manuel)
+        // call this when a new day starts
         public void AdvanceDay()
         {
-            currentDayIndex++;
+            currentDay++;
+            shopCache.Clear();
+            shopAnger.Clear();
+
             if (debugLogs)
-            {
-                Debug.Log("Day advanced to " + currentDayIndex);
-            }
-            // cachedShops'i silmiyoruz; EnterShop içinden güne göre zaten yenilenecek
+                Debug.Log("TradeManager: new day " + currentDay + ", shop cache cleared.");
         }
 
-        // Köylü ile etkileþime girince burasý çaðrýlýyor
+        // called from villager when player interacts
         public void EnterShop(ShopData shopData)
         {
             if (shopData == null)
@@ -62,47 +160,36 @@ namespace Economy
                 return;
             }
 
-            // ARTIK: her seferinde GenerateRuntimeShop çaðýrmak yerine cache kullanalým
-            CurrentShop = GetOrGenerateShopForToday(shopData);
+            ShopRuntimeState state;
+
+            if (!shopCache.TryGetValue(shopData, out state))
+            {
+                state = GenerateRuntimeShop(shopData);
+                shopCache[shopData] = state;
+            }
+
+            CurrentShop = state;
+
+            if (!shopAnger.ContainsKey(CurrentShop))
+                shopAnger[CurrentShop] = 0f;
 
             if (debugLogs)
-            {
-                Debug.Log("Entered shop: " + shopData.displayName);
-            }
+                Debug.Log("Entered shop: " + shopData.displayName + " (day " + currentDay + ")");
 
             OnShopOpened?.Invoke(CurrentShop);
 
-            // Simple greeting based on mood
-            string line = GetGreetingLine(CurrentShop.mood);
-            OnNpcResponse?.Invoke(NpcResponseType.Greeting, line);
-        }
+            string line;
 
-        // Ayný gün içinde ayný shop'a girersek ayný runtime state'i döndür
-        ShopRuntimeState GetOrGenerateShopForToday(ShopData shopData)
-        {
-            CachedShopState cached;
-            if (cachedShops.TryGetValue(shopData, out cached))
+            if (IsShopBlocked(CurrentShop))
             {
-                if (cached != null &&
-                    cached.state != null &&
-                    cached.dayIndex == currentDayIndex)
-                {
-                    // Ayný gün, cache'teki state'i kullan
-                    return cached.state;
-                }
+                line = "I will not trade with you today.";
+            }
+            else
+            {
+                line = GetGreetingLine(CurrentShop.mood);
             }
 
-            // Yeni gün veya hiç yok yeniden üret
-            ShopRuntimeState newState = GenerateRuntimeShop(shopData);
-
-            cached = new CachedShopState
-            {
-                dayIndex = currentDayIndex,
-                state = newState
-            };
-            cachedShops[shopData] = cached;
-
-            return newState;
+            OnNpcResponse?.Invoke(NpcResponseType.Greeting, line);
         }
 
         ShopRuntimeState GenerateRuntimeShop(ShopData shopData)
@@ -110,16 +197,12 @@ namespace Economy
             ShopRuntimeState state = new ShopRuntimeState();
             state.data = shopData;
 
-            // Mood
             state.mood = PickRandomMood(shopData);
 
-            // Fish list
             List<FishDef> pool = new List<FishDef>(shopData.possibleFish);
             int count = Mathf.Clamp(
                 Random.Range(shopData.minFishTypes, shopData.maxFishTypes + 1),
-                0,
-                pool.Count
-            );
+                0, pool.Count);
 
             for (int i = 0; i < count; i++)
             {
@@ -132,17 +215,15 @@ namespace Economy
                 RuntimeFishStock runtimeStock = new RuntimeFishStock();
                 runtimeStock.fish = def;
 
-                runtimeStock.quantityKg = Random.Range(shopData.minStockKg, shopData.maxStockKg + 1);
+                runtimeStock.quantityKg = Random.Range(
+                    shopData.minStockKg,
+                    shopData.maxStockKg + 1);
 
                 float mul = Random.Range(shopData.minPriceMul, shopData.maxPriceMul);
                 mul *= shopData.shopPriceBias;
 
-                // ----- FÝYAT BURADA AYARLANIYOR -----
-                // Eski: runtimeStock.unitPricePerKg = def.basePricePerKg * mul;
                 float rawPrice = def.basePricePerKg * mul;
-                int roundedPrice = Mathf.Max(1, Mathf.RoundToInt(rawPrice)); // tam sayýya çevir
-                runtimeStock.unitPricePerKg = roundedPrice;
-                // -------------------------------------
+                runtimeStock.unitPricePerKg = Mathf.Round(rawPrice);
 
                 state.currentStock.Add(runtimeStock);
             }
@@ -170,23 +251,56 @@ namespace Economy
             r -= data.neutralWeight;
 
             if (r < data.annoyedWeight) return NpcMood.Annoyed;
-            // else
+
             return NpcMood.Angry;
         }
 
         string GetGreetingLine(NpcMood mood)
         {
+            string[] pool;
+
             switch (mood)
             {
                 case NpcMood.Happy:
-                    return "Welcome, fish are very fresh today.";
+                    pool = happyGreetLines;
+                    break;
                 case NpcMood.Annoyed:
-                    return "Say what you want, I am busy.";
+                    pool = annoyedGreetLines;
+                    break;
                 case NpcMood.Angry:
-                    return "Do not waste my time.";
+                    pool = angryGreetLines;
+                    break;
                 default:
-                    return "Hello.";
+                    pool = neutralGreetLines;
+                    break;
             }
+
+            if (pool == null || pool.Length == 0)
+                return "Hello.";
+
+            int index = Random.Range(0, pool.Length);
+            return pool[index];
+        }
+
+        public bool IsShopBlocked(ShopRuntimeState shop)
+        {
+            if (shop == null) return false;
+
+            float anger;
+            if (!shopAnger.TryGetValue(shop, out anger))
+                return false;
+
+            return anger >= angerThreshold;
+        }
+
+        public void BlockCurrentShopForToday()
+        {
+            if (CurrentShop == null) return;
+
+            shopAnger[CurrentShop] = angerThreshold;
+
+            if (debugLogs)
+                Debug.Log("TradeManager: shop blocked for today due to bargaining.");
         }
 
         public BargainResult EvaluateBargain(
@@ -203,54 +317,69 @@ namespace Economy
             {
                 result.finalTotal = baseTotal;
                 result.responseType = NpcResponseType.Angry;
-                result.npcLine = "I do not like this offer.";
+                result.npcLine = RandomNpcLine(angryRejectLines);
+                OnNpcResponse?.Invoke(result.responseType, result.npcLine);
                 return result;
             }
 
-            // Clamp desiredTotal to slider range (defensive)
+            float anger = 0f;
+            shopAnger.TryGetValue(CurrentShop, out anger);
+
+            if (anger >= angerThreshold)
+            {
+                result.finalTotal = baseTotal;
+                result.responseType = NpcResponseType.Angry;
+                result.npcLine = "I told you, I will not trade with you today.";
+                OnNpcResponse?.Invoke(result.responseType, result.npcLine);
+                return result;
+            }
+
             float minAllowed = baseTotal * CurrentShop.data.bargainMinTotalMul;
             float maxAllowed = baseTotal * CurrentShop.data.bargainMaxTotalMul;
             desiredTotal = Mathf.Clamp(desiredTotal, minAllowed, maxAllowed);
 
-            // How hard the player is pushing
-            float t = 0f;
-            if (Mathf.Abs(baseTotal - desiredTotal) > 0.01f)
+            float offerMul = desiredTotal / Mathf.Max(0.01f, baseTotal);
+
+            if (offerMul >= easyAcceptMul)
             {
-                float fullDiscount = baseTotal - minAllowed; // max possible discount
-                float requestedDiscount = baseTotal - desiredTotal;
-                t = Mathf.Clamp01(requestedDiscount / Mathf.Max(0.01f, fullDiscount));
-            }
-
-            // Mood controls how much of this discount is accepted
-            float moodFactor = GetMoodDiscountFactor(CurrentShop.mood);
-
-            // finalTotal between baseTotal and desiredTotal
-            float lerpFactor = t * moodFactor;
-
-            float finalTotal = Mathf.Lerp(baseTotal, desiredTotal, lerpFactor);
-
-            // Small randomness so it does not feel robotic
-            float noise = Random.Range(-0.02f, 0.02f); // +-2 percent
-            finalTotal *= 1f + noise;
-            finalTotal = Mathf.Clamp(finalTotal, minAllowed, baseTotal);
-
-            result.finalTotal = finalTotal;
-
-            // Response line
-            if (Mathf.Approximately(finalTotal, baseTotal))
-            {
-                result.responseType = NpcResponseType.Angry;
-                result.npcLine = "No discount. Take it or leave it.";
-            }
-            else if (finalTotal <= desiredTotal + 0.01f)
-            {
+                result.finalTotal = desiredTotal;
                 result.responseType = NpcResponseType.Accept;
-                result.npcLine = "Alright, I will give it for " + finalTotal.ToString("0") + ".";
+                result.npcLine = RandomNpcLineWithPrice(acceptLines, result.finalTotal);
+
+                anger = Mathf.Max(0f, anger - angerDecreaseOnGoodDeal);
+            }
+            else if (offerMul >= counterMinMul)
+            {
+                float moodFactor = GetMoodDiscountFactor(CurrentShop.mood);
+                float counterMul = Mathf.Lerp(1f, offerMul, moodFactor);
+                float counterTotal = baseTotal * counterMul;
+                counterTotal = Mathf.Clamp(counterTotal, minAllowed, baseTotal);
+
+                result.finalTotal = counterTotal;
+                result.responseType = NpcResponseType.Counter;
+                result.npcLine = RandomNpcLineWithPrice(counterLines, result.finalTotal);
+
+                anger += angerIncreaseCounter;
             }
             else
             {
-                result.responseType = NpcResponseType.Counter;
-                result.npcLine = "I can go down to " + finalTotal.ToString("0") + ". Any lower would make me angry.";
+                result.finalTotal = baseTotal;
+                result.responseType = NpcResponseType.Angry;
+                result.npcLine = RandomNpcLine(angryRejectLines);
+
+                anger += angerIncreaseLowball;
+            }
+
+            anger = Mathf.Clamp(anger, 0f, angerThreshold * 1.5f);
+            shopAnger[CurrentShop] = anger;
+
+            if (debugLogs)
+            {
+                Debug.Log("EvaluateBargain: base=" + baseTotal +
+                          " desired=" + desiredTotal +
+                          " final=" + result.finalTotal +
+                          " offerMul=" + offerMul +
+                          " anger=" + anger);
             }
 
             OnNpcResponse?.Invoke(result.responseType, result.npcLine);
@@ -262,7 +391,7 @@ namespace Economy
             switch (mood)
             {
                 case NpcMood.Happy:
-                    return 0.9f; // almost full requested discount
+                    return 0.9f;
                 case NpcMood.Neutral:
                     return 0.6f;
                 case NpcMood.Annoyed:
@@ -290,7 +419,6 @@ namespace Economy
             }
 
             OnNpcResponse?.Invoke(NpcResponseType.Accept, "Deal. Pleasure doing business.");
-            // TODO: plug player money and inventory here.
         }
     }
 }

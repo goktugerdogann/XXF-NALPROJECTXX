@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using Economy; // TradeManager, ShopData, ShopRuntimeState, RuntimeFishStock, NpcResponseType
+using Economy; // TradeManager, ShopData, ShopRuntimeState, RuntimeFishStock, NpcResponseType, MoneyManager
 
 public class ShopUIController : MonoBehaviour
 {
@@ -22,12 +22,13 @@ public class ShopUIController : MonoBehaviour
     public TMP_Text fishInfoText;
 
     [Header("Quantity")]
-    public GameObject quantityPanel;        // QuantityPanel objesi (kg label, +/- ve input parent)
+    public GameObject quantityPanel;
     public TMP_InputField quantityInput;
     public Button quantityMinusButton;
     public Button quantityPlusButton;
 
     [Header("Totals")]
+    public GameObject totalsPanel;   // <= YENI
     public TMP_Text baseTotalText;
     public TMP_Text discountText;
     public TMP_Text finalTotalText;
@@ -54,8 +55,7 @@ public class ShopUIController : MonoBehaviour
     [Header("External")]
     public VillagerInteractionCam villagerInteraction;
 
-    [Header("Player money (temp)")]
-    public int playerMoney = 100;
+    [Header("Player money UI")]
     public TMP_Text playerMoneyText;
 
     // runtime state
@@ -74,6 +74,8 @@ public class ShopUIController : MonoBehaviour
 
     Vector3 acceptPosDefault;
     Vector3 acceptPosCentered;
+
+    int bargainAttempts = 0;
 
     void Awake()
     {
@@ -142,20 +144,51 @@ public class ShopUIController : MonoBehaviour
         if (bargainOverlay != null)
             bargainOverlay.SetActive(false);
 
+        // <<< BURAYA EKLE >>>
+        if (quantityPanel != null)
+            quantityPanel.SetActive(false);
+        if (totalsPanel != null)
+            totalsPanel.SetActive(false);
+        // <<< BURAYA EKLE >>>
+
         ClearSelectedFishUI();
         SetPriceLock(false);
         UpdateTotalsUI();
-        UpdatePlayerMoneyUI();
+
+        if (MoneyManager.Instance != null)
+        {
+            MoneyManager.Instance.OnMoneyChanged += HandleMoneyChanged;
+            HandleMoneyChanged(MoneyManager.Instance.CurrentMoney);
+        }
     }
 
-    // price lock helper
+
+    void OnDestroy()
+    {
+        if (TradeManager.Instance != null)
+        {
+            TradeManager.Instance.OnShopOpened -= HandleShopOpened;
+            TradeManager.Instance.OnNpcResponse -= HandleNpcResponse;
+        }
+
+        if (MoneyManager.Instance != null)
+            MoneyManager.Instance.OnMoneyChanged -= HandleMoneyChanged;
+    }
+
+    void HandleMoneyChanged(int amount)
+    {
+        if (playerMoneyText != null)
+            playerMoneyText.text = amount.ToString();
+    }
+
     void SetPriceLock(bool locked)
     {
         priceLocked = locked;
         bool canEdit = !locked;
 
-        if (quantityPanel != null)
-            quantityPanel.SetActive(canEdit);
+        // PANELI BURADA AÇIP KAPATMAYACAÐIZ ARTIK
+        // if (quantityPanel != null)
+        //     quantityPanel.SetActive(canEdit);
 
         if (quantityInput != null)
             quantityInput.interactable = canEdit;
@@ -175,6 +208,7 @@ public class ShopUIController : MonoBehaviour
         }
     }
 
+
     // events from TradeManager
     void HandleShopOpened(ShopRuntimeState state)
     {
@@ -184,6 +218,7 @@ public class ShopUIController : MonoBehaviour
         baseTotal = 0f;
         finalTotal = 0f;
         hasBargain = false;
+        bargainAttempts = 0;
 
         if (rootPanel != null)
             rootPanel.SetActive(true);
@@ -219,7 +254,14 @@ public class ShopUIController : MonoBehaviour
 
         SetPriceLock(false);
         UpdateTotalsUI();
-        UpdatePlayerMoneyUI();
+
+        if (acceptButton != null)
+            acceptButton.gameObject.SetActive(true);
+        if (bargainButton != null)
+            bargainButton.gameObject.SetActive(true);
+
+        if (MoneyManager.Instance != null)
+            HandleMoneyChanged(MoneyManager.Instance.CurrentMoney);
     }
 
     void HandleNpcResponse(NpcResponseType type, string line)
@@ -230,12 +272,16 @@ public class ShopUIController : MonoBehaviour
 
     void ClearSelectedFishUI()
     {
+        
+        if (quantityPanel != null)
+            quantityPanel.SetActive(false);
+        if (totalsPanel != null)
+            totalsPanel.SetActive(false);
         if (selectedFishIcon != null)
         {
             selectedFishIcon.sprite = null;
             selectedFishIcon.color = new Color(1f, 1f, 1f, 0f);
         }
-
         if (selectedFishNameText != null) selectedFishNameText.text = "";
         if (selectedFishStockText != null) selectedFishStockText.text = "";
         if (selectedFishBasePriceText != null) selectedFishBasePriceText.text = "";
@@ -246,9 +292,18 @@ public class ShopUIController : MonoBehaviour
 
         if (quantityPanel != null)
             quantityPanel.SetActive(false);
+
+        if (totalsPanel != null)
+            totalsPanel.SetActive(false);
+
+        bargainAttempts = 0;
+
+        if (acceptButton != null)
+            acceptButton.gameObject.SetActive(true);
+        if (bargainButton != null)
+            bargainButton.gameObject.SetActive(true);
     }
 
-    // called by list items
     public void OnFishSelected(RuntimeFishStock stock)
     {
         if (priceLocked)
@@ -256,6 +311,7 @@ public class ShopUIController : MonoBehaviour
 
         selectedStock = stock;
         hasBargain = false;
+        bargainAttempts = 0;
 
         if (selectedFishIcon != null)
         {
@@ -270,22 +326,31 @@ public class ShopUIController : MonoBehaviour
             selectedFishStockText.text = "Stock: " + stock.quantityKg + " kg";
 
         if (selectedFishBasePriceText != null)
-            selectedFishBasePriceText.text = "Price: " + stock.unitPricePerKg.ToString("0") + " /kg";
+            selectedFishBasePriceText.text =
+                "Price: " + stock.unitPricePerKg.ToString("0") + " /kg";
 
         if (fishInfoText != null)
             fishInfoText.text = stock.fish.description;
 
+        // Baslangicta 1 kg
         currentQuantity = 1;
         if (quantityInput != null)
             quantityInput.text = "1";
 
+        // Panelleri ac
         if (quantityPanel != null)
             quantityPanel.SetActive(true);
+        if (totalsPanel != null)
+            totalsPanel.SetActive(true);
 
+        // Inputlar kilitli olmasin
+        SetPriceLock(false);
+
+        // EN ONEMLI SATIR: toplamlari hesapla ve UI'yi guncelle
         RecalculateBaseAndFinal();
     }
 
-    // quantity and totals
+
     void ChangeQuantity(int delta)
     {
         if (selectedStock == null) return;
@@ -369,23 +434,18 @@ public class ShopUIController : MonoBehaviour
         if (discountText != null)
         {
             if (hasBargain && discount > 0.01f)
-                discountText.text = "PAZARLIK: -" + discount.ToString("0");
+                discountText.text = "BARGAIN: -" + discount.ToString("0");
             else
-                discountText.text = "PAZARLIK: 0";
+                discountText.text = "BARGAIN: 0";
         }
 
         if (finalTotalText != null)
             finalTotalText.text = "= " + finalTotal.ToString("0");
     }
 
-    void UpdatePlayerMoneyUI()
-    {
-        if (playerMoneyText != null)
-            playerMoneyText.text = playerMoney.ToString();
-    }
 
-    // bargain popup
-    void OnBargainClicked()
+
+void OnBargainClicked()
     {
         if (selectedStock == null) return;
         if (priceLocked) return;
@@ -447,7 +507,7 @@ public class ShopUIController : MonoBehaviour
 
     void OnBargainConfirmClicked()
     {
-        if (selectedStock == null || currentShop == null)
+        if (selectedStock == null || currentShop == null || TradeManager.Instance == null)
             return;
 
         if (currentQuantity <= 0)
@@ -456,67 +516,133 @@ public class ShopUIController : MonoBehaviour
         baseTotal = currentQuantity * selectedStock.unitPricePerKg;
 
         float t = bargainSlider != null ? bargainSlider.value : 1f;
-        float offeredTotal = Mathf.Lerp(sliderMinTotal, sliderMaxTotal, t);
+        float desiredTotal = Mathf.Lerp(sliderMinTotal, sliderMaxTotal, t);
 
-        float acceptThreshold = baseTotal * 0.8f;
-        bool accepted = offeredTotal >= acceptThreshold;
+        // one more attempt
+        bargainAttempts++;
 
-        if (accepted)
+        BargainResult result = TradeManager.Instance.EvaluateBargain(
+            selectedStock, currentQuantity, baseTotal, desiredTotal);
+
+        finalTotal = result.finalTotal;
+        hasBargain = (result.responseType == NpcResponseType.Accept ||
+                      result.responseType == NpcResponseType.Counter);
+
+        UpdateTotalsUI();
+
+        if (npcDialogueText != null && !string.IsNullOrEmpty(result.npcLine))
+            npcDialogueText.text = result.npcLine;
+
+        if (result.responseType == NpcResponseType.Accept)
         {
-            hasBargain = true;
-            finalTotal = offeredTotal;
-
-            // kilitle ve paneli tamamen kapat
+            // our offer accepted: lock price, hide offer
             SetPriceLock(true);
             if (quantityPanel != null)
                 quantityPanel.SetActive(false);
-
-            UpdateTotalsUI();
-
-            if (npcDialogueText != null)
-                npcDialogueText.text = "Deal. That is acceptable.";
         }
-        else
+        else if (result.responseType == NpcResponseType.Counter)
         {
-            hasBargain = false;
-            finalTotal = baseTotal;
+            // npc counter: keep offer button so we can bargain again
             SetPriceLock(false);
-            UpdateTotalsUI();
+        }
+
+        // if second offer and still not accepted -> block shop
+        if (bargainAttempts >= 2 && result.responseType != NpcResponseType.Accept)
+        {
+            if (TradeManager.Instance != null)
+                TradeManager.Instance.BlockCurrentShopForToday();
 
             if (npcDialogueText != null)
-                npcDialogueText.text = "No, that is too low.";
+                npcDialogueText.text = "I will not trade with you anymore today.";
+
+            if (acceptButton != null)
+                acceptButton.gameObject.SetActive(false);
+            if (bargainButton != null)
+                bargainButton.gameObject.SetActive(false);
         }
 
         CloseBargainPopup();
     }
 
-    // accept / cancel / close
     void OnAcceptClicked()
     {
-        if (bargainOverlay != null && bargainOverlay.activeSelf)
-            return;
+        Debug.Log("[ShopUI] Accept clicked.");
 
-        if (TradeManager.Instance == null || selectedStock == null || currentShop == null)
+        if (bargainOverlay != null && bargainOverlay.activeSelf)
+        {
+            if (npcDialogueText != null)
+                npcDialogueText.text = "Close or confirm the bargain first.";
             return;
+        }
+
+        if (TradeManager.Instance != null &&
+            TradeManager.Instance.IsShopBlocked(currentShop))
+        {
+            if (npcDialogueText != null)
+                npcDialogueText.text = "I will not trade with you anymore today.";
+            Debug.Log("[ShopUI] Shop is blocked due to high anger.");
+            return;
+        }
+
+        if (TradeManager.Instance == null)
+        {
+            Debug.LogWarning("[ShopUI] TradeManager.Instance is null.");
+            return;
+        }
+
+        if (currentShop == null)
+        {
+            Debug.LogWarning("[ShopUI] currentShop is null.");
+            return;
+        }
+
+        if (selectedStock == null)
+        {
+            Debug.Log("[ShopUI] No fish selected, cannot accept.");
+            if (npcDialogueText != null)
+                npcDialogueText.text = "Select what you want to buy first.";
+            return;
+        }
 
         if (currentQuantity <= 0)
             currentQuantity = 1;
 
         baseTotal = currentQuantity * selectedStock.unitPricePerKg;
+
         if (!hasBargain)
             finalTotal = baseTotal;
 
         int priceToPay = Mathf.CeilToInt(finalTotal);
+        Debug.Log("[ShopUI] Price to pay: " + priceToPay);
 
-        if (playerMoney < priceToPay)
+        if (MoneyManager.Instance == null)
+        {
+            Debug.LogWarning("[ShopUI] MoneyManager instance missing in scene.");
+            return;
+        }
+
+        if (!MoneyManager.Instance.CanAfford(priceToPay))
+        {
+            if (npcDialogueText != null)
+                npcDialogueText.text = "You do not have enough money.";
+
+            Debug.Log("[ShopUI] Not enough money. Player has: " +
+                      MoneyManager.Instance.CurrentMoney +
+                      ", needs: " + priceToPay);
+            return;
+        }
+
+        bool spent = MoneyManager.Instance.TrySpend(priceToPay);
+
+        Debug.Log("[ShopUI] TrySpend result=" + spent +
+                  " CurrentMoney AFTER=" + MoneyManager.Instance.CurrentMoney);
+
+        if (!spent)
         {
             if (npcDialogueText != null)
                 npcDialogueText.text = "You do not have enough money.";
             return;
         }
-
-        playerMoney -= priceToPay;
-        UpdatePlayerMoneyUI();
 
         TradeManager.Instance.CompleteTrade(selectedStock, currentQuantity, finalTotal);
 
@@ -534,6 +660,8 @@ public class ShopUIController : MonoBehaviour
         baseTotal = 0f;
         finalTotal = 0f;
         currentQuantity = 0;
+        bargainAttempts = 0;
+
         SetPriceLock(false);
         UpdateTotalsUI();
         ClearSelectedFishUI();
