@@ -12,6 +12,20 @@ namespace Economy
         [Header("Debug")]
         public bool debugLogs = true;
 
+        [Header("Day System")]
+        [Tooltip("Gün indexi. Yeni güne geçince bunu 1 arttýr (AdvanceDay ile).")]
+        public int currentDayIndex = 0;
+
+        // Her shop için o güne ait state'i cache'liyoruz
+        class CachedShopState
+        {
+            public int dayIndex;
+            public ShopRuntimeState state;
+        }
+
+        Dictionary<ShopData, CachedShopState> cachedShops =
+            new Dictionary<ShopData, CachedShopState>();
+
         public ShopRuntimeState CurrentShop { get; private set; }
 
         public event Action<ShopRuntimeState> OnShopOpened;
@@ -28,7 +42,18 @@ namespace Economy
             Instance = this;
         }
 
-        // Call this when player interacts with a shop in the world
+        // Dýþarýdan gün deðiþtirmek için çaðýrýrsýn (þimdilik manuel)
+        public void AdvanceDay()
+        {
+            currentDayIndex++;
+            if (debugLogs)
+            {
+                Debug.Log("Day advanced to " + currentDayIndex);
+            }
+            // cachedShops'i silmiyoruz; EnterShop içinden güne göre zaten yenilenecek
+        }
+
+        // Köylü ile etkileþime girince burasý çaðrýlýyor
         public void EnterShop(ShopData shopData)
         {
             if (shopData == null)
@@ -37,7 +62,8 @@ namespace Economy
                 return;
             }
 
-            CurrentShop = GenerateRuntimeShop(shopData);
+            // ARTIK: her seferinde GenerateRuntimeShop çaðýrmak yerine cache kullanalým
+            CurrentShop = GetOrGenerateShopForToday(shopData);
 
             if (debugLogs)
             {
@@ -51,6 +77,34 @@ namespace Economy
             OnNpcResponse?.Invoke(NpcResponseType.Greeting, line);
         }
 
+        // Ayný gün içinde ayný shop'a girersek ayný runtime state'i döndür
+        ShopRuntimeState GetOrGenerateShopForToday(ShopData shopData)
+        {
+            CachedShopState cached;
+            if (cachedShops.TryGetValue(shopData, out cached))
+            {
+                if (cached != null &&
+                    cached.state != null &&
+                    cached.dayIndex == currentDayIndex)
+                {
+                    // Ayný gün, cache'teki state'i kullan
+                    return cached.state;
+                }
+            }
+
+            // Yeni gün veya hiç yok yeniden üret
+            ShopRuntimeState newState = GenerateRuntimeShop(shopData);
+
+            cached = new CachedShopState
+            {
+                dayIndex = currentDayIndex,
+                state = newState
+            };
+            cachedShops[shopData] = cached;
+
+            return newState;
+        }
+
         ShopRuntimeState GenerateRuntimeShop(ShopData shopData)
         {
             ShopRuntimeState state = new ShopRuntimeState();
@@ -61,7 +115,11 @@ namespace Economy
 
             // Fish list
             List<FishDef> pool = new List<FishDef>(shopData.possibleFish);
-            int count = Mathf.Clamp(Random.Range(shopData.minFishTypes, shopData.maxFishTypes + 1), 0, pool.Count);
+            int count = Mathf.Clamp(
+                Random.Range(shopData.minFishTypes, shopData.maxFishTypes + 1),
+                0,
+                pool.Count
+            );
 
             for (int i = 0; i < count; i++)
             {
@@ -79,7 +137,12 @@ namespace Economy
                 float mul = Random.Range(shopData.minPriceMul, shopData.maxPriceMul);
                 mul *= shopData.shopPriceBias;
 
-                runtimeStock.unitPricePerKg = def.basePricePerKg * mul;
+                // ----- FÝYAT BURADA AYARLANIYOR -----
+                // Eski: runtimeStock.unitPricePerKg = def.basePricePerKg * mul;
+                float rawPrice = def.basePricePerKg * mul;
+                int roundedPrice = Mathf.Max(1, Mathf.RoundToInt(rawPrice)); // tam sayýya çevir
+                runtimeStock.unitPricePerKg = roundedPrice;
+                // -------------------------------------
 
                 state.currentStock.Add(runtimeStock);
             }

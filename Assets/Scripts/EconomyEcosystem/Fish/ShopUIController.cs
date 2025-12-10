@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -7,12 +6,12 @@ using Economy; // TradeManager, ShopData, ShopRuntimeState, RuntimeFishStock, Np
 public class ShopUIController : MonoBehaviour
 {
     [Header("Root")]
-    public GameObject rootPanel;        // ShopMainPanel veya ShopRootPanel
+    public GameObject rootPanel;
     public TMP_Text shopNameText;
     public Button closeButton;
 
     [Header("Left list")]
-    public Transform fishListContent;          // ScrollView Content
+    public Transform fishListContent;
     public ShopFishListItemUI fishListItemPrefab;
 
     [Header("Center panel - selected fish")]
@@ -23,23 +22,24 @@ public class ShopUIController : MonoBehaviour
     public TMP_Text fishInfoText;
 
     [Header("Quantity")]
+    public GameObject quantityPanel;        // QuantityPanel objesi (kg label, +/- ve input parent)
     public TMP_InputField quantityInput;
     public Button quantityMinusButton;
     public Button quantityPlusButton;
 
     [Header("Totals")]
-    public TMP_Text baseTotalText;     // "TOTAL: 0"
-    public TMP_Text discountText;      // "PAZARLIK: 0"
-    public TMP_Text finalTotalText;    // "= 0"
+    public TMP_Text baseTotalText;
+    public TMP_Text discountText;
+    public TMP_Text finalTotalText;
 
     [Header("Right panel - npc")]
     public Image npcPortrait;
     public TMP_Text npcDialogueText;
 
     [Header("Bottom bar")]
-    public Button bargainButton;      // Offer
-    public Button acceptButton;       // Accept
-    public Button cancelButton;       // Cancel
+    public Button bargainButton;   // Offer
+    public Button acceptButton;    // Accept
+    public Button cancelButton;    // Cancel
 
     [Header("Bargain popup")]
     public GameObject bargainOverlay;
@@ -58,7 +58,7 @@ public class ShopUIController : MonoBehaviour
     public int playerMoney = 100;
     public TMP_Text playerMoneyText;
 
-    // Runtime state
+    // runtime state
     ShopRuntimeState currentShop;
     RuntimeFishStock selectedStock;
     int currentQuantity = 0;
@@ -70,12 +70,13 @@ public class ShopUIController : MonoBehaviour
     float sliderMinTotal = 0f;
     float sliderMaxTotal = 0f;
 
-    // Fiyat kilitli mi? (npc teklifi kabul ettikten sonra true)
     bool priceLocked = false;
+
+    Vector3 acceptPosDefault;
+    Vector3 acceptPosCentered;
 
     void Awake()
     {
-        // Button listeners
         if (bargainButton != null)
             bargainButton.onClick.AddListener(OnBargainClicked);
 
@@ -100,11 +101,30 @@ public class ShopUIController : MonoBehaviour
         if (quantityMinusButton != null)
             quantityMinusButton.onClick.AddListener(() => ChangeQuantity(-1));
 
+        if (quantityInput != null)
+            quantityInput.onEndEdit.AddListener(OnQuantityInputChanged);
+
         if (bargainSlider != null)
         {
             bargainSlider.minValue = 0f;
             bargainSlider.maxValue = 1f;
             bargainSlider.onValueChanged.AddListener(OnBargainSliderChanged);
+        }
+
+        if (acceptButton != null)
+        {
+            acceptPosDefault = acceptButton.transform.localPosition;
+
+            if (bargainButton != null && cancelButton != null)
+            {
+                Vector3 left = bargainButton.transform.localPosition;
+                Vector3 right = cancelButton.transform.localPosition;
+                acceptPosCentered = (left + right) * 0.5f;
+            }
+            else
+            {
+                acceptPosCentered = acceptPosDefault;
+            }
         }
     }
 
@@ -128,15 +148,14 @@ public class ShopUIController : MonoBehaviour
         UpdatePlayerMoneyUI();
     }
 
-    // =====================================================
-    // Helper: fiyat kilidi
-    // =====================================================
-
+    // price lock helper
     void SetPriceLock(bool locked)
     {
         priceLocked = locked;
-
         bool canEdit = !locked;
+
+        if (quantityPanel != null)
+            quantityPanel.SetActive(canEdit);
 
         if (quantityInput != null)
             quantityInput.interactable = canEdit;
@@ -144,14 +163,19 @@ public class ShopUIController : MonoBehaviour
             quantityMinusButton.interactable = canEdit;
         if (quantityPlusButton != null)
             quantityPlusButton.interactable = canEdit;
+
         if (bargainButton != null)
-            bargainButton.interactable = canEdit;
+            bargainButton.gameObject.SetActive(canEdit);
+
+        if (acceptButton != null)
+        {
+            acceptButton.transform.localPosition = locked
+                ? acceptPosCentered
+                : acceptPosDefault;
+        }
     }
 
-    // =====================================================
-    // Event handlers from TradeManager
-    // =====================================================
-
+    // events from TradeManager
     void HandleShopOpened(ShopRuntimeState state)
     {
         currentShop = state;
@@ -160,7 +184,6 @@ public class ShopUIController : MonoBehaviour
         baseTotal = 0f;
         finalTotal = 0f;
         hasBargain = false;
-        SetPriceLock(false);
 
         if (rootPanel != null)
             rootPanel.SetActive(true);
@@ -168,27 +191,20 @@ public class ShopUIController : MonoBehaviour
         if (shopNameText != null && state.data != null)
             shopNameText.text = state.data.displayName;
 
-        // Npc portrait
         if (npcPortrait != null && state.data != null)
             npcPortrait.sprite = state.data.npcPortrait;
 
-        // Default npc line bos
         if (npcDialogueText != null)
             npcDialogueText.text = "";
 
-        // Clear selected fish panel
         ClearSelectedFishUI();
 
-        // Clear left list
         if (fishListContent != null)
         {
             for (int i = fishListContent.childCount - 1; i >= 0; i--)
-            {
                 Destroy(fishListContent.GetChild(i).gameObject);
-            }
         }
 
-        // Populate fish list
         if (fishListItemPrefab != null && fishListContent != null)
         {
             foreach (RuntimeFishStock stock in state.currentStock)
@@ -201,6 +217,7 @@ public class ShopUIController : MonoBehaviour
             }
         }
 
+        SetPriceLock(false);
         UpdateTotalsUI();
         UpdatePlayerMoneyUI();
     }
@@ -226,17 +243,19 @@ public class ShopUIController : MonoBehaviour
 
         currentQuantity = 0;
         if (quantityInput != null) quantityInput.text = "";
+
+        if (quantityPanel != null)
+            quantityPanel.SetActive(false);
     }
 
-    // =====================================================
-    // Called by list items
-    // =====================================================
-
+    // called by list items
     public void OnFishSelected(RuntimeFishStock stock)
     {
+        if (priceLocked)
+            return;
+
         selectedStock = stock;
         hasBargain = false;
-        SetPriceLock(false);
 
         if (selectedFishIcon != null)
         {
@@ -251,7 +270,7 @@ public class ShopUIController : MonoBehaviour
             selectedFishStockText.text = "Stock: " + stock.quantityKg + " kg";
 
         if (selectedFishBasePriceText != null)
-            selectedFishBasePriceText.text = "Price: " + stock.unitPricePerKg.ToString("0.0") + " /kg";
+            selectedFishBasePriceText.text = "Price: " + stock.unitPricePerKg.ToString("0") + " /kg";
 
         if (fishInfoText != null)
             fishInfoText.text = stock.fish.description;
@@ -260,13 +279,13 @@ public class ShopUIController : MonoBehaviour
         if (quantityInput != null)
             quantityInput.text = "1";
 
+        if (quantityPanel != null)
+            quantityPanel.SetActive(true);
+
         RecalculateBaseAndFinal();
     }
 
-    // =====================================================
-    // Quantity and totals
-    // =====================================================
-
+    // quantity and totals
     void ChangeQuantity(int delta)
     {
         if (selectedStock == null) return;
@@ -277,6 +296,37 @@ public class ShopUIController : MonoBehaviour
             currentQuantity = 1;
         if (currentQuantity > selectedStock.quantityKg)
             currentQuantity = selectedStock.quantityKg;
+
+        if (quantityInput != null)
+            quantityInput.text = currentQuantity.ToString();
+
+        if (!hasBargain)
+            finalTotal = currentQuantity * selectedStock.unitPricePerKg;
+
+        RecalculateBaseAndFinal();
+    }
+
+    void OnQuantityInputChanged(string value)
+    {
+        if (selectedStock == null)
+        {
+            if (quantityInput != null) quantityInput.text = "";
+            return;
+        }
+
+        if (priceLocked)
+        {
+            if (quantityInput != null && currentQuantity > 0)
+                quantityInput.text = currentQuantity.ToString();
+            return;
+        }
+
+        int parsed;
+        if (!int.TryParse(value, out parsed))
+            parsed = currentQuantity > 0 ? currentQuantity : 1;
+
+        parsed = Mathf.Clamp(parsed, 1, selectedStock.quantityKg);
+        currentQuantity = parsed;
 
         if (quantityInput != null)
             quantityInput.text = currentQuantity.ToString();
@@ -334,16 +384,11 @@ public class ShopUIController : MonoBehaviour
             playerMoneyText.text = playerMoney.ToString();
     }
 
-    // =====================================================
-    // Bargain popup
-    // =====================================================
-
+    // bargain popup
     void OnBargainClicked()
     {
-        if (selectedStock == null)
-            return;
-        if (priceLocked)
-            return;
+        if (selectedStock == null) return;
+        if (priceLocked) return;
 
         OpenBargainPopup();
     }
@@ -356,26 +401,29 @@ public class ShopUIController : MonoBehaviour
         if (currentQuantity <= 0)
             currentQuantity = 1;
 
-        // Base total for this quantity
         baseTotal = currentQuantity * selectedStock.unitPricePerKg;
         if (!hasBargain)
             finalTotal = baseTotal;
 
-        // Slider range: 0.6x - 1.0x
-        sliderMinTotal = baseTotal * 0.6f;
-        sliderMaxTotal = baseTotal;
+        float minMul = currentShop != null && currentShop.data != null
+            ? currentShop.data.bargainMinTotalMul
+            : 0.6f;
+        float maxMul = currentShop != null && currentShop.data != null
+            ? currentShop.data.bargainMaxTotalMul
+            : 1.0f;
+
+        sliderMinTotal = baseTotal * minMul;
+        sliderMaxTotal = baseTotal * maxMul;
 
         if (normalPriceText != null)
             normalPriceText.text = "Normal: " + baseTotal.ToString("0");
-
         if (minPriceText != null)
             minPriceText.text = "Min: " + sliderMinTotal.ToString("0");
-
         if (maxPriceText != null)
             maxPriceText.text = "Max: " + sliderMaxTotal.ToString("0");
 
         if (bargainSlider != null)
-            bargainSlider.value = 1f; // Start at normal price
+            bargainSlider.value = 1f;
 
         OnBargainSliderChanged(bargainSlider != null ? bargainSlider.value : 1f);
 
@@ -405,13 +453,11 @@ public class ShopUIController : MonoBehaviour
         if (currentQuantity <= 0)
             currentQuantity = 1;
 
-        // Base total tekrar hesap
         baseTotal = currentQuantity * selectedStock.unitPricePerKg;
 
         float t = bargainSlider != null ? bargainSlider.value : 1f;
         float offeredTotal = Mathf.Lerp(sliderMinTotal, sliderMaxTotal, t);
 
-        // Basit kabul kurali: normal fiyatin en az %80'i ise kabul et
         float acceptThreshold = baseTotal * 0.8f;
         bool accepted = offeredTotal >= acceptThreshold;
 
@@ -419,7 +465,12 @@ public class ShopUIController : MonoBehaviour
         {
             hasBargain = true;
             finalTotal = offeredTotal;
-            SetPriceLock(true);          // artik kg degismez, offer acilmaz
+
+            // kilitle ve paneli tamamen kapat
+            SetPriceLock(true);
+            if (quantityPanel != null)
+                quantityPanel.SetActive(false);
+
             UpdateTotalsUI();
 
             if (npcDialogueText != null)
@@ -427,10 +478,9 @@ public class ShopUIController : MonoBehaviour
         }
         else
         {
-            // Pazarlik gecersiz, eski fiyat korunur
             hasBargain = false;
             finalTotal = baseTotal;
-            SetPriceLock(false);         // tekrar deneyebilir
+            SetPriceLock(false);
             UpdateTotalsUI();
 
             if (npcDialogueText != null)
@@ -440,13 +490,9 @@ public class ShopUIController : MonoBehaviour
         CloseBargainPopup();
     }
 
-    // =====================================================
-    // Accept / Cancel / Close
-    // =====================================================
-
+    // accept / cancel / close
     void OnAcceptClicked()
     {
-        // Popup acikken accept calismasin
         if (bargainOverlay != null && bargainOverlay.activeSelf)
             return;
 
@@ -469,14 +515,11 @@ public class ShopUIController : MonoBehaviour
             return;
         }
 
-        // Pay
         playerMoney -= priceToPay;
         UpdatePlayerMoneyUI();
 
-        // Notify TradeManager (stock, quantity, final price)
         TradeManager.Instance.CompleteTrade(selectedStock, currentQuantity, finalTotal);
 
-        // Close shop and exit conversation
         OnCloseClicked();
     }
 
