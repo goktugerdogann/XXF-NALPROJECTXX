@@ -5,8 +5,7 @@ using Economy;
 
 public class VillagerInteractionCam : MonoBehaviour
 {
-    // global flag: any villager conversation active
-    public static bool AnyConversationActive = false;
+    public static VillagerInteractionCam Current;  // <<< EKLENDI
 
     [Header("Cameras")]
     public CinemachineVirtualCamera mainVCam;
@@ -40,7 +39,6 @@ public class VillagerInteractionCam : MonoBehaviour
 
         if (Input.GetKeyDown(interactKey) && !inConversation)
         {
-            
             EnterConversation();
         }
     }
@@ -66,7 +64,7 @@ public class VillagerInteractionCam : MonoBehaviour
     {
         if (inConversation) return;
         inConversation = true;
-        AnyConversationActive = true;
+        Current = this; // <<< SU ANKI VILLAGERI ISARETLE
 
         if (exitRoutine != null)
         {
@@ -108,7 +106,9 @@ public class VillagerInteractionCam : MonoBehaviour
     {
         if (!inConversation) return;
         inConversation = false;
-        AnyConversationActive = false;
+
+        if (Current == this)
+            Current = null; // <<< CIKARKEN TEMIZLE
 
         if (enterRoutine != null)
         {

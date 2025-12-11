@@ -50,12 +50,12 @@ public class EquipManager : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.G))
             DropEquipped();
 
-        // if inventory is open, do not process hotbar keys
+        // inventory aciksa hotbar calismasin
         if (InventoryUI.Instance != null && InventoryUI.Instance.IsOpen)
             return;
 
-        // if any villager conversation is active, do not process hotbar keys
-        if (VillagerInteractionCam.AnyConversationActive)
+        // bir villager ile konusuyorsak hotbar calismasin
+        if (VillagerInteractionCam.Current != null)
             return;
 
         // hotbar 1-4

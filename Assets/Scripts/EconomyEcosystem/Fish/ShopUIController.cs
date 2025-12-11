@@ -660,8 +660,6 @@ void OnBargainClicked()
         baseTotal = 0f;
         finalTotal = 0f;
         currentQuantity = 0;
-        bargainAttempts = 0;
-
         SetPriceLock(false);
         UpdateTotalsUI();
         ClearSelectedFishUI();
@@ -669,7 +667,13 @@ void OnBargainClicked()
         if (bargainOverlay != null)
             bargainOverlay.SetActive(false);
 
-        if (villagerInteraction != null)
-            villagerInteraction.ExitConversation();
+        // ESKI: serialized villagerInteraction kullanma
+        // if (villagerInteraction != null)
+        //     villagerInteraction.ExitConversation();
+
+        // YENI: hangi villager aktifse onu kapat
+        if (VillagerInteractionCam.Current != null)
+            VillagerInteractionCam.Current.ExitConversation();
     }
+
 }
