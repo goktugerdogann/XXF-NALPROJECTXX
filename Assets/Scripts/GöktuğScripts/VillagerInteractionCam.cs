@@ -5,7 +5,7 @@ using Economy;
 
 public class VillagerInteractionCam : MonoBehaviour
 {
-    public static VillagerInteractionCam Current;  // <<< EKLENDI
+    public static VillagerInteractionCam Current;
 
     [Header("Cameras")]
     public CinemachineVirtualCamera mainVCam;
@@ -24,8 +24,13 @@ public class VillagerInteractionCam : MonoBehaviour
     public float enterMouseUnlockDelay = 0.9f;
     public float exitMovementUnlockDelay = 0.9f;
 
-    [Header("Shop")]
+    [Header("Shop (buy mode)")]
     public ShopData shopData;
+
+    [Header("Buyer (sell mode)")]
+    public bool isBuyer = false;
+    public BuyerData buyerData;
+    public BuyerDeliveryZone buyerDeliveryZone;
 
     bool inConversation = false;
     bool playerInRange = false;
@@ -64,7 +69,7 @@ public class VillagerInteractionCam : MonoBehaviour
     {
         if (inConversation) return;
         inConversation = true;
-        Current = this; // <<< SU ANKI VILLAGERI ISARETLE
+        Current = this;
 
         if (exitRoutine != null)
         {
@@ -108,7 +113,7 @@ public class VillagerInteractionCam : MonoBehaviour
         inConversation = false;
 
         if (Current == this)
-            Current = null; // <<< CIKARKEN TEMIZLE
+            Current = null;
 
         if (enterRoutine != null)
         {
@@ -141,9 +146,30 @@ public class VillagerInteractionCam : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
 
-        if (TradeManager.Instance != null && shopData != null)
+        // BUY mu, SELL mi?
+        if (isBuyer)
         {
-            TradeManager.Instance.EnterShop(shopData);
+            // SELL MODE
+            if (SellManager.Instance != null && buyerData != null && buyerDeliveryZone != null)
+            {
+                SellManager.Instance.EnterBuyer(buyerData, buyerDeliveryZone);
+            }
+            else
+            {
+                Debug.LogWarning("VillagerInteractionCam: Sell mode but SellManager/buyerData/buyerDeliveryZone is missing.");
+            }
+        }
+        else
+        {
+            // BUY MODE
+            if (TradeManager.Instance != null && shopData != null)
+            {
+                TradeManager.Instance.EnterShop(shopData);
+            }
+            else
+            {
+                Debug.LogWarning("VillagerInteractionCam: Buy mode but TradeManager or shopData is missing.");
+            }
         }
 
         enterRoutine = null;

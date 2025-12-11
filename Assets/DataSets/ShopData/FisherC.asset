@@ -16,7 +16,9 @@ MonoBehaviour:
   displayName: FisherC
   possibleFish:
   - {fileID: 11400000, guid: 59d50290911a1234382efa2b05b7fcad, type: 2}
-  - {fileID: 11400000, guid: f041f17a865c45c428b60899e0a0103d, type: 2}
+  - {fileID: 11400000, guid: 59d50290911a1234382efa2b05b7fcad, type: 2}
+  - {fileID: 11400000, guid: 59d50290911a1234382efa2b05b7fcad, type: 2}
+  - {fileID: 11400000, guid: 59d50290911a1234382efa2b05b7fcad, type: 2}
   minFishTypes: 2
   maxFishTypes: 5
   minStockKg: 10

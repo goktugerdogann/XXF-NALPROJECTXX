@@ -121,6 +121,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 62b141961ed5e064d9540f1d99c86917, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  fishDef: {fileID: 0}
   kgAmount: 0
 --- !u!114 &-9119245421046956727
 MonoBehaviour:
@@ -136,8 +137,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   itemData: {fileID: 11400000, guid: f1c0faa4f4a11384e9e1d1880510b30e, type: 2}
   amount: 1
-  goesToInventory: 1
-  saveToWorld: 1
+  goesToInventory: 0
+  saveToWorld: 0
 --- !u!114 &320091213534645531
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -77,7 +77,7 @@ public class MoneyManager : MonoBehaviour
         CurrentMoney = amount;
         UpdateUIAndFireEvent();
     }
-
+   
     public void ResetToStartingMoney()
     {
         CurrentMoney = startingMoney;

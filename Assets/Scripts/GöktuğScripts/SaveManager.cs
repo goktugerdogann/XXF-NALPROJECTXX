@@ -1,6 +1,7 @@
 using System.IO;
 using UnityEngine;
 using System.Collections.Generic;
+using Economy; // for FishDef
 
 public class SaveManager : MonoBehaviour
 {
@@ -10,6 +11,9 @@ public class SaveManager : MonoBehaviour
     public ItemDatabase itemDatabase;
     public Transform playerTransform;
     public float loadSpawnYOffset = 0.1f;
+
+    [Header("Fish defs for crates")]
+    public List<FishDef> allFishDefs = new List<FishDef>();
 
     [System.Serializable]
     public class InventorySlotData
@@ -27,6 +31,15 @@ public class SaveManager : MonoBehaviour
     }
 
     [System.Serializable]
+    public class CrateData
+    {
+        public string fishId;
+        public int kgAmount;
+        public Vector3 position;
+        public Quaternion rotation;
+    }
+
+    [System.Serializable]
     public class PlayerData
     {
         public Vector3 position;
@@ -36,9 +49,10 @@ public class SaveManager : MonoBehaviour
     [System.Serializable]
     public class SaveData
     {
-        public int money;  // saved money
+        public int money;
         public List<InventorySlotData> inventory = new List<InventorySlotData>();
         public List<WorldItemData> worldItems = new List<WorldItemData>();
+        public List<CrateData> fishCrates = new List<CrateData>();
         public PlayerData player = new PlayerData();
     }
 
@@ -70,6 +84,21 @@ public class SaveManager : MonoBehaviour
         LoadGame();
     }
 
+    FishDef FindFishDefById(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+
+        for (int i = 0; i < allFishDefs.Count; i++)
+        {
+            FishDef f = allFishDefs[i];
+            if (f == null) continue;
+            if (f.id == id)
+                return f;
+        }
+
+        return null;
+    }
+
     public void SaveGame()
     {
         SaveData data = new SaveData();
@@ -99,12 +128,13 @@ public class SaveManager : MonoBehaviour
             }
         }
 
-        // world items
+        // world items (generic pickup items)
         PickupItem[] worldItems = FindObjectsOfType<PickupItem>();
         foreach (var p in worldItems)
         {
             if (p.itemData == null) continue;
             if (!p.gameObject.activeInHierarchy) continue;
+            if (!p.saveToWorld) continue;
 
             WorldItemData w = new WorldItemData
             {
@@ -113,6 +143,23 @@ public class SaveManager : MonoBehaviour
                 rotation = p.transform.rotation
             };
             data.worldItems.Add(w);
+        }
+
+        // fish crates
+        FishCrate[] crates = FindObjectsOfType<FishCrate>();
+        foreach (var c in crates)
+        {
+            if (c.fishDef == null) continue;
+            if (c.kgAmount <= 0) continue;
+
+            CrateData cd = new CrateData
+            {
+                fishId = c.fishDef.id,
+                kgAmount = c.kgAmount,
+                position = c.transform.position,
+                rotation = c.transform.rotation
+            };
+            data.fishCrates.Add(cd);
         }
 
         // player
@@ -138,6 +185,7 @@ public class SaveManager : MonoBehaviour
         Debug.Log("SaveManager: saved " +
                   data.inventory.Count + " inventory slots, " +
                   data.worldItems.Count + " world items, " +
+                  data.fishCrates.Count + " crates, " +
                   "money=" + data.money + ". Path: " + SavePath);
     }
 
@@ -147,7 +195,6 @@ public class SaveManager : MonoBehaviour
         {
             Debug.Log("SaveManager: no save file yet, starting fresh.");
 
-            // no save file, use starting money
             if (MoneyManager.Instance != null)
                 MoneyManager.Instance.ResetToStartingMoney();
 
@@ -212,6 +259,13 @@ public class SaveManager : MonoBehaviour
             Destroy(p.gameObject);
         }
 
+        // clear existing crates
+        var existingCrates = FindObjectsOfType<FishCrate>();
+        foreach (var c in existingCrates)
+        {
+            Destroy(c.gameObject);
+        }
+
         // spawn saved world items
         if (data.worldItems != null)
         {
@@ -239,6 +293,43 @@ public class SaveManager : MonoBehaviour
             }
         }
 
+        // spawn saved crates
+        if (data.fishCrates != null && data.fishCrates.Count > 0)
+        {
+            GameObject cratePrefab = null;
+            if (DeliveryManager.Instance != null)
+                cratePrefab = DeliveryManager.Instance.cratePrefab;
+
+            if (cratePrefab == null)
+            {
+                Debug.LogWarning("SaveManager: cannot spawn crates, cratePrefab is null on DeliveryManager.");
+            }
+            else
+            {
+                foreach (var cd in data.fishCrates)
+                {
+                    if (string.IsNullOrEmpty(cd.fishId)) continue;
+                    if (cd.kgAmount <= 0) continue;
+
+                    FishDef fishDef = FindFishDefById(cd.fishId);
+                    if (fishDef == null)
+                    {
+                        Debug.LogWarning("SaveManager: fishId not found in allFishDefs: " + cd.fishId);
+                        continue;
+                    }
+
+                    GameObject crateObj = Object.Instantiate(cratePrefab, cd.position, cd.rotation);
+
+                    FishCrate crateComp = crateObj.GetComponent<FishCrate>();
+                    if (crateComp == null)
+                        crateComp = crateObj.AddComponent<FishCrate>();
+
+                    crateComp.fishDef = fishDef;
+                    crateComp.kgAmount = cd.kgAmount;
+                }
+            }
+        }
+
         // player
         if (playerTransform != null && data.player != null)
         {
@@ -260,6 +351,8 @@ public class SaveManager : MonoBehaviour
                   (data.inventory != null ? data.inventory.Count : 0) +
                   " inventory slots, " +
                   (data.worldItems != null ? data.worldItems.Count : 0) +
-                  " world items, money=" + data.money + ".");
+                  " world items, " +
+                  (data.fishCrates != null ? data.fishCrates.Count : 0) +
+                  " crates, money=" + data.money + ".");
     }
 }
