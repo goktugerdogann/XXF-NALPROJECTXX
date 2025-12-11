@@ -40,6 +40,7 @@ public class VillagerInteractionCam : MonoBehaviour
 
         if (Input.GetKeyDown(interactKey) && !inConversation)
         {
+            
             EnterConversation();
         }
     }

@@ -23,7 +23,7 @@ public class MoneyManager : MonoBehaviour
             Destroy(gameObject);
             return;
         }
-
+       
         Instance = this;
 
         // temporary default, SaveManager will override on load
@@ -32,7 +32,7 @@ public class MoneyManager : MonoBehaviour
 
         UpdateUIAndFireEvent();
     }
-
+   
     void UpdateUIAndFireEvent()
     {
         if (moneyText != null)

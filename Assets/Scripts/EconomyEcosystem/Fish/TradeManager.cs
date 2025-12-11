@@ -304,85 +304,85 @@ namespace Economy
         }
 
         public BargainResult EvaluateBargain(
-            RuntimeFishStock stock,
-            int quantityKg,
-            float baseTotal,
-            float desiredTotal)
+      RuntimeFishStock stock,
+      int quantityKg,
+      float baseTotal,
+      float desiredTotal)
         {
             BargainResult result = new BargainResult();
             result.baseTotal = baseTotal;
             result.desiredTotal = desiredTotal;
 
+            // Guvenlik kontrolu
             if (CurrentShop == null || stock == null || quantityKg <= 0 || baseTotal <= 0.01f)
             {
                 result.finalTotal = baseTotal;
                 result.responseType = NpcResponseType.Angry;
-                result.npcLine = RandomNpcLine(angryRejectLines);
-                OnNpcResponse?.Invoke(result.responseType, result.npcLine);
+                result.npcLine = "I do not like this offer.";
                 return result;
             }
 
-            float anger = 0f;
-            shopAnger.TryGetValue(CurrentShop, out anger);
-
-            if (anger >= angerThreshold)
-            {
-                result.finalTotal = baseTotal;
-                result.responseType = NpcResponseType.Angry;
-                result.npcLine = "I told you, I will not trade with you today.";
-                OnNpcResponse?.Invoke(result.responseType, result.npcLine);
-                return result;
-            }
-
+            // Bu dukkan icin izin verilen min / max total
             float minAllowed = baseTotal * CurrentShop.data.bargainMinTotalMul;
             float maxAllowed = baseTotal * CurrentShop.data.bargainMaxTotalMul;
+
+            // Oyuncunun istedigi fiyati bu araliga zorluyoruz
             desiredTotal = Mathf.Clamp(desiredTotal, minAllowed, maxAllowed);
 
-            float offerMul = desiredTotal / Mathf.Max(0.01f, baseTotal);
+            // Oyuncunun istedigi indirim miktari
+            float discountAmount = baseTotal - desiredTotal; // ne kadar dusurmek istiyor
+            if (discountAmount < 0f) discountAmount = 0f;
 
-            if (offerMul >= easyAcceptMul)
+            float discountPct = 0f; // 0-1 arasi
+            if (baseTotal > 0.01f)
+                discountPct = discountAmount / baseTotal;
+
+            // Burada random esikler uretiyoruz
+            // Orn: acceptRange = 0.22f (%22), counterExtra = 0.07f -> counterRange = %29
+            float acceptRange = Random.Range(0f, 0.30f);   // 0% - 30% arasi, direkt kabul
+            float counterExtra = Random.Range(0f, 0.15f);  // ek 0% - 15% arasi, karsi teklif alani
+            float counterRange = acceptRange + counterExtra;
+
+            float finalTotal = baseTotal;
+            NpcResponseType respType;
+            string line;
+
+            if (discountPct <= acceptRange + 0.0001f)
             {
-                result.finalTotal = desiredTotal;
-                result.responseType = NpcResponseType.Accept;
-                result.npcLine = RandomNpcLineWithPrice(acceptLines, result.finalTotal);
-
-                anger = Mathf.Max(0f, anger - angerDecreaseOnGoodDeal);
+                // Oyuncunun istedigi indirim random kabul esiginden kucuk:
+                // Direkt istedigi fiyata veriyoruz.
+                finalTotal = desiredTotal;
+                respType = NpcResponseType.Accept;
+                line = "Alright, I can accept this price.";
             }
-            else if (offerMul >= counterMinMul)
+            else if (discountPct <= counterRange + 0.0001f)
             {
-                float moodFactor = GetMoodDiscountFactor(CurrentShop.mood);
-                float counterMul = Mathf.Lerp(1f, offerMul, moodFactor);
-                float counterTotal = baseTotal * counterMul;
-                counterTotal = Mathf.Clamp(counterTotal, minAllowed, baseTotal);
+                // Burada NPC karsi teklif yapiyor.
+                // Fiyat, baseTotal ile desiredTotal arasinda bir yerde.
+                float t = Random.Range(0.3f, 0.7f); // ortalara yakin bir oran
+                finalTotal = Mathf.Lerp(baseTotal, desiredTotal, t);
 
-                result.finalTotal = counterTotal;
-                result.responseType = NpcResponseType.Counter;
-                result.npcLine = RandomNpcLineWithPrice(counterLines, result.finalTotal);
+                // Guvenlik icin clamp
+                finalTotal = Mathf.Clamp(finalTotal, minAllowed, baseTotal);
 
-                anger += angerIncreaseCounter;
+                respType = NpcResponseType.Counter;
+                line = "That is too low, but I can go down to " + finalTotal.ToString("0") + ".";
             }
             else
             {
-                result.finalTotal = baseTotal;
-                result.responseType = NpcResponseType.Angry;
-                result.npcLine = RandomNpcLine(angryRejectLines);
-
-                anger += angerIncreaseLowball;
+                // Oyuncu cok fazla indirim istemis: hic bir indirim yok, NPC kiziyor.
+                finalTotal = baseTotal;
+                respType = NpcResponseType.Angry;
+                line = "No discount. Take it or leave it.";
             }
 
-            anger = Mathf.Clamp(anger, 0f, angerThreshold * 1.5f);
-            shopAnger[CurrentShop] = anger;
+            result.finalTotal = finalTotal;
+            result.responseType = respType;
+            result.npcLine = line;
 
-            if (debugLogs)
-            {
-                Debug.Log("EvaluateBargain: base=" + baseTotal +
-                          " desired=" + desiredTotal +
-                          " final=" + result.finalTotal +
-                          " offerMul=" + offerMul +
-                          " anger=" + anger);
-            }
+            // UI icin event
+            OnNpcResponse?.Invoke(respType, line);
 
-            OnNpcResponse?.Invoke(result.responseType, result.npcLine);
             return result;
         }
 
@@ -408,6 +408,7 @@ namespace Economy
             if (stock == null || quantityKg <= 0)
                 return;
 
+            // Stoktan dus
             stock.quantityKg -= quantityKg;
             if (stock.quantityKg < 0)
                 stock.quantityKg = 0;
@@ -418,7 +419,13 @@ namespace Economy
                           stock.fish.displayName + " for total " + totalPaid.ToString("0"));
             }
 
+            // Kasa spawn et
+            if (DeliveryManager.Instance != null)
+            {
+                DeliveryManager.Instance.SpawnFishCrates(quantityKg);
+            }
+
             OnNpcResponse?.Invoke(NpcResponseType.Accept, "Deal. Pleasure doing business.");
         }
     }
-}
+    }
