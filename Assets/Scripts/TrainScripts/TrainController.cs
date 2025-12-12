@@ -9,6 +9,7 @@ public class TrainController : MonoBehaviour
     [SerializeField] private float rollingResistance = 0.1f;
     public Vector3 TrainVelocity { get; private set; }
     private Rigidbody rb;
+    private Vector3 lastPos;
     
     [Header("VİTES AYARLARI")]
     [SerializeField] private int currentGear = 1;   // 1 ileri, -1 geri, 0 boş
@@ -103,8 +104,8 @@ public class TrainController : MonoBehaviour
         // Hareket
         rb.MovePosition(rb.position + transform.forward * currentSpeed * Time.fixedDeltaTime);
 
-        
-        TrainVelocity = rb.velocity;
+        TrainVelocity = (transform.position - lastPos) / Time.fixedDeltaTime;
+        lastPos = transform.position;   
     }
 
     public float GetCurrentSpeed()
