@@ -407,11 +407,8 @@ namespace Economy
         {
             if (stock == null || quantityKg <= 0)
                 return;
-            if (DeliveryManager.Instance != null)
-            {
-                DeliveryManager.Instance.SpawnFishCrates(stock.fish, quantityKg);
-            }
-            // Stoktan dus
+
+            // stoktan dus
             stock.quantityKg -= quantityKg;
             if (stock.quantityKg < 0)
                 stock.quantityKg = 0;
@@ -422,7 +419,7 @@ namespace Economy
                           stock.fish.displayName + " for total " + totalPaid.ToString("0"));
             }
 
-            // IMPORTANT: fishDef VE kg ile kasa spawn et
+            // kutu spawn (SADECE 1 KERE)
             if (DeliveryManager.Instance != null)
             {
                 DeliveryManager.Instance.SpawnFishCrates(stock.fish, quantityKg);
@@ -430,6 +427,7 @@ namespace Economy
 
             OnNpcResponse?.Invoke(NpcResponseType.Accept, "Deal. Pleasure doing business.");
         }
+
 
 
     }
