@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using Economy; // TradeManager, ShopData, ShopRuntimeState, RuntimeFishStock, NpcResponseType, MoneyManager
+using Economy;
 
 public class ShopUIController : MonoBehaviour
 {
@@ -28,7 +28,7 @@ public class ShopUIController : MonoBehaviour
     public Button quantityPlusButton;
 
     [Header("Totals")]
-    public GameObject totalsPanel;   // <= YENI
+    public GameObject totalsPanel;
     public TMP_Text baseTotalText;
     public TMP_Text discountText;
     public TMP_Text finalTotalText;
@@ -38,9 +38,9 @@ public class ShopUIController : MonoBehaviour
     public TMP_Text npcDialogueText;
 
     [Header("Bottom bar")]
-    public Button bargainButton;   // Offer
-    public Button acceptButton;    // Accept
-    public Button cancelButton;    // Cancel
+    public Button bargainButton;
+    public Button acceptButton;
+    public Button cancelButton;
 
     [Header("Bargain popup")]
     public GameObject bargainOverlay;
@@ -58,7 +58,6 @@ public class ShopUIController : MonoBehaviour
     [Header("Player money UI")]
     public TMP_Text playerMoneyText;
 
-    // runtime state
     ShopRuntimeState currentShop;
     RuntimeFishStock selectedStock;
     int currentQuantity = 0;
@@ -76,6 +75,21 @@ public class ShopUIController : MonoBehaviour
     Vector3 acceptPosCentered;
 
     int bargainAttempts = 0;
+
+    // ---- FIX: money rounding helpers ----
+    // UI ile ödeme ayný olsun diye tüm totals int mantýðýyla kilitleniyor.
+    int MoneyRound(float value)
+    {
+        // float jitter (110.00001 gibi) problemini bitirir.
+        return Mathf.RoundToInt(value);
+    }
+
+    void SnapTotalsToMoney()
+    {
+        baseTotal = MoneyRound(baseTotal);
+        finalTotal = MoneyRound(finalTotal);
+    }
+    // ------------------------------------
 
     void Awake()
     {
@@ -144,12 +158,10 @@ public class ShopUIController : MonoBehaviour
         if (bargainOverlay != null)
             bargainOverlay.SetActive(false);
 
-        // <<< BURAYA EKLE >>>
         if (quantityPanel != null)
             quantityPanel.SetActive(false);
         if (totalsPanel != null)
             totalsPanel.SetActive(false);
-        // <<< BURAYA EKLE >>>
 
         ClearSelectedFishUI();
         SetPriceLock(false);
@@ -161,7 +173,6 @@ public class ShopUIController : MonoBehaviour
             HandleMoneyChanged(MoneyManager.Instance.CurrentMoney);
         }
     }
-
 
     void OnDestroy()
     {
@@ -186,10 +197,6 @@ public class ShopUIController : MonoBehaviour
         priceLocked = locked;
         bool canEdit = !locked;
 
-        // PANELI BURADA AÇIP KAPATMAYACAÐIZ ARTIK
-        // if (quantityPanel != null)
-        //     quantityPanel.SetActive(canEdit);
-
         if (quantityInput != null)
             quantityInput.interactable = canEdit;
         if (quantityMinusButton != null)
@@ -208,8 +215,6 @@ public class ShopUIController : MonoBehaviour
         }
     }
 
-
-    // events from TradeManager
     void HandleShopOpened(ShopRuntimeState state)
     {
         currentShop = state;
@@ -272,16 +277,17 @@ public class ShopUIController : MonoBehaviour
 
     void ClearSelectedFishUI()
     {
-        
         if (quantityPanel != null)
             quantityPanel.SetActive(false);
         if (totalsPanel != null)
             totalsPanel.SetActive(false);
+
         if (selectedFishIcon != null)
         {
             selectedFishIcon.sprite = null;
             selectedFishIcon.color = new Color(1f, 1f, 1f, 0f);
         }
+
         if (selectedFishNameText != null) selectedFishNameText.text = "";
         if (selectedFishStockText != null) selectedFishStockText.text = "";
         if (selectedFishBasePriceText != null) selectedFishBasePriceText.text = "";
@@ -289,12 +295,6 @@ public class ShopUIController : MonoBehaviour
 
         currentQuantity = 0;
         if (quantityInput != null) quantityInput.text = "";
-
-        if (quantityPanel != null)
-            quantityPanel.SetActive(false);
-
-        if (totalsPanel != null)
-            totalsPanel.SetActive(false);
 
         bargainAttempts = 0;
 
@@ -332,24 +332,19 @@ public class ShopUIController : MonoBehaviour
         if (fishInfoText != null)
             fishInfoText.text = stock.fish.description;
 
-        // Baslangicta 1 kg
         currentQuantity = 1;
         if (quantityInput != null)
             quantityInput.text = "1";
 
-        // Panelleri ac
         if (quantityPanel != null)
             quantityPanel.SetActive(true);
         if (totalsPanel != null)
             totalsPanel.SetActive(true);
 
-        // Inputlar kilitli olmasin
         SetPriceLock(false);
 
-        // EN ONEMLI SATIR: toplamlari hesapla ve UI'yi guncelle
         RecalculateBaseAndFinal();
     }
-
 
     void ChangeQuantity(int delta)
     {
@@ -421,31 +416,36 @@ public class ShopUIController : MonoBehaviour
         if (!hasBargain)
             finalTotal = baseTotal;
 
+        // FIX: totals money kilidi
+        SnapTotalsToMoney();
+
         UpdateTotalsUI();
     }
 
     void UpdateTotalsUI()
     {
-        if (baseTotalText != null)
-            baseTotalText.text = "TOTAL: " + baseTotal.ToString("0");
+        // FIX: UI her zaman int gösterir
+        int baseInt = MoneyRound(baseTotal);
+        int finalInt = MoneyRound(finalTotal);
+        int discountInt = baseInt - finalInt;
+        if (discountInt < 0) discountInt = 0;
 
-        float discount = baseTotal - finalTotal;
+        if (baseTotalText != null)
+            baseTotalText.text = "TOTAL: " + baseInt.ToString();
 
         if (discountText != null)
         {
-            if (hasBargain && discount > 0.01f)
-                discountText.text = "BARGAIN: -" + discount.ToString("0");
+            if (hasBargain && discountInt > 0)
+                discountText.text = "BARGAIN: -" + discountInt.ToString();
             else
                 discountText.text = "BARGAIN: 0";
         }
 
         if (finalTotalText != null)
-            finalTotalText.text = "= " + finalTotal.ToString("0");
+            finalTotalText.text = "= " + finalInt.ToString();
     }
 
-
-
-void OnBargainClicked()
+    void OnBargainClicked()
     {
         if (selectedStock == null) return;
         if (priceLocked) return;
@@ -465,6 +465,8 @@ void OnBargainClicked()
         if (!hasBargain)
             finalTotal = baseTotal;
 
+        SnapTotalsToMoney();
+
         float minMul = currentShop != null && currentShop.data != null
             ? currentShop.data.bargainMinTotalMul
             : 0.6f;
@@ -475,12 +477,16 @@ void OnBargainClicked()
         sliderMinTotal = baseTotal * minMul;
         sliderMaxTotal = baseTotal * maxMul;
 
+        // slider min/max da int kilitli olsun (UI ile tutarlý)
+        sliderMinTotal = MoneyRound(sliderMinTotal);
+        sliderMaxTotal = MoneyRound(sliderMaxTotal);
+
         if (normalPriceText != null)
-            normalPriceText.text = "Normal: " + baseTotal.ToString("0");
+            normalPriceText.text = "Normal: " + MoneyRound(baseTotal).ToString();
         if (minPriceText != null)
-            minPriceText.text = "Min: " + sliderMinTotal.ToString("0");
+            minPriceText.text = "Min: " + MoneyRound(sliderMinTotal).ToString();
         if (maxPriceText != null)
-            maxPriceText.text = "Max: " + sliderMaxTotal.ToString("0");
+            maxPriceText.text = "Max: " + MoneyRound(sliderMaxTotal).ToString();
 
         if (bargainSlider != null)
             bargainSlider.value = 1f;
@@ -502,7 +508,7 @@ void OnBargainClicked()
             return;
 
         float price = Mathf.Lerp(sliderMinTotal, sliderMaxTotal, value);
-        desiredPriceText.text = price.ToString("0");
+        desiredPriceText.text = MoneyRound(price).ToString();
     }
 
     void OnBargainConfirmClicked()
@@ -518,13 +524,16 @@ void OnBargainClicked()
         float t = bargainSlider != null ? bargainSlider.value : 1f;
         float desiredTotal = Mathf.Lerp(sliderMinTotal, sliderMaxTotal, t);
 
-        // one more attempt
         bargainAttempts++;
 
         BargainResult result = TradeManager.Instance.EvaluateBargain(
             selectedStock, currentQuantity, baseTotal, desiredTotal);
 
         finalTotal = result.finalTotal;
+
+        // FIX: bargain sonucu da int’e kilitle
+        SnapTotalsToMoney();
+
         hasBargain = (result.responseType == NpcResponseType.Accept ||
                       result.responseType == NpcResponseType.Counter);
 
@@ -535,18 +544,15 @@ void OnBargainClicked()
 
         if (result.responseType == NpcResponseType.Accept)
         {
-            // our offer accepted: lock price, hide offer
             SetPriceLock(true);
             if (quantityPanel != null)
                 quantityPanel.SetActive(false);
         }
         else if (result.responseType == NpcResponseType.Counter)
         {
-            // npc counter: keep offer button so we can bargain again
             SetPriceLock(false);
         }
 
-        // if second offer and still not accepted -> block shop
         if (bargainAttempts >= 2 && result.responseType != NpcResponseType.Accept)
         {
             if (TradeManager.Instance != null)
@@ -612,8 +618,13 @@ void OnBargainClicked()
         if (!hasBargain)
             finalTotal = baseTotal;
 
-        int priceToPay = Mathf.CeilToInt(finalTotal);
-        Debug.Log("[ShopUI] Price to pay: " + priceToPay);
+        // FIX: ödeme öncesi de kilitle
+        SnapTotalsToMoney();
+
+        // FIX: UI ile ayný olacak
+        int priceToPay = MoneyRound(finalTotal);
+
+        Debug.Log("[ShopUI] Price to pay: " + priceToPay + " finalTotalRaw=" + finalTotal.ToString("F6"));
 
         if (MoneyManager.Instance == null)
         {
@@ -644,6 +655,7 @@ void OnBargainClicked()
             return;
         }
 
+        // CompleteTrade float alýyor ama biz int’e kilitledik zaten
         TradeManager.Instance.CompleteTrade(selectedStock, currentQuantity, finalTotal);
 
         OnCloseClicked();
@@ -667,13 +679,7 @@ void OnBargainClicked()
         if (bargainOverlay != null)
             bargainOverlay.SetActive(false);
 
-        // ESKI: serialized villagerInteraction kullanma
-        // if (villagerInteraction != null)
-        //     villagerInteraction.ExitConversation();
-
-        // YENI: hangi villager aktifse onu kapat
         if (VillagerInteractionCam.Current != null)
             VillagerInteractionCam.Current.ExitConversation();
     }
-
 }

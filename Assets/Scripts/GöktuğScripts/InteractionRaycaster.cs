@@ -42,13 +42,14 @@ public class InteractionRaycaster : MonoBehaviour
     public GameObject crosshairObject;
     public bool hideCrosshairWhileCharging = true;
 
-    // Conversation block
     [Header("Conversation Block")]
     public bool blockPlacementFromConversation = false;
     bool previewWasActiveBeforeConversation = false;
 
     float pickupTimer = 0f;
     bool isHoldingPickup = false;
+    [Header("FishCrate Stacking")]
+    public float crateStackEpsilon = 0.02f; // 2 cm tolerans
 
     GameObject heldObject;
     Rigidbody heldRigidbody;
@@ -73,6 +74,12 @@ public class InteractionRaycaster : MonoBehaviour
         get { return isPlacementMode && isPlacingFromInventory && heldObject != null; }
     }
 
+    public bool HasHeldWorldPreview()
+    {
+        // inventoryden place edilen preview degil, world preview (FishCrate vs)
+        return isPlacementMode && !isPlacingFromInventory && heldObject != null;
+    }
+
     void Start()
     {
         Debug.Log(Application.persistentDataPath);
@@ -92,7 +99,13 @@ public class InteractionRaycaster : MonoBehaviour
 
     void Update()
     {
-        // If villager conversation blocks placement
+        CrateCarrier carrier = FindObjectOfType<CrateCarrier>();
+        if (carrier != null && carrier.IsCarryingCrates())
+        {
+            if (uiManager != null) uiManager.ShowInteractText("Press E to drop crates");
+            return;
+        }
+
         if (blockPlacementFromConversation)
         {
             if (previewObject != null && previewObject.activeSelf)
@@ -101,7 +114,6 @@ public class InteractionRaycaster : MonoBehaviour
             if (uiManager != null)
                 uiManager.HideInteractText();
 
-            // Do not pick up or place anything while blocked
             return;
         }
 
@@ -151,8 +163,6 @@ public class InteractionRaycaster : MonoBehaviour
             HandlePlacementMode();
     }
 
-    // PICKUP
-
     void HandlePickup()
     {
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
@@ -160,13 +170,17 @@ public class InteractionRaycaster : MonoBehaviour
 
         if (Physics.Raycast(ray, out hit, interactDistance, interactionLayer))
         {
-            GameObject target = hit.collider.gameObject;
-            PickupItem pickup = target.GetComponent<PickupItem>();
+            PickupItem pickup = hit.collider.GetComponentInParent<PickupItem>();
+            if (pickup == null)
+            {
+                if (uiManager != null) uiManager.HideInteractText();
+                return;
+            }
 
-            // NEW: check if this pickup needs repair tool and if we hold it
+            GameObject target = pickup.gameObject;
+
             if (!CanPickupThis(pickup))
             {
-                // cancel any charging
                 if (isHoldingPickup)
                 {
                     isHoldingPickup = false;
@@ -175,7 +189,7 @@ public class InteractionRaycaster : MonoBehaviour
                 }
 
                 if (uiManager != null)
-                    uiManager.ShowInteractText("You need the repair tool to pick this");
+                    uiManager.ShowInteractText("Need repair tool");
 
                 return;
             }
@@ -211,12 +225,12 @@ public class InteractionRaycaster : MonoBehaviour
                             Object.Destroy(target);
 
                             if (uiManager != null)
-                                uiManager.ShowInteractText(pickup.itemData.displayName + " added to inventory");
+                                uiManager.ShowInteractText(pickup.itemData.displayName + " added");
                         }
                         else
                         {
                             if (uiManager != null)
-                                uiManager.ShowInteractText("Inventory is full");
+                                uiManager.ShowInteractText("Inventory full");
                         }
                     }
                     else
@@ -258,8 +272,6 @@ public class InteractionRaycaster : MonoBehaviour
         }
     }
 
-    // BEGIN PLACE FROM INVENTORY
-
     public void BeginPlaceFromInventory(ItemData item)
     {
         if (item == null || item.worldPrefab == null)
@@ -279,10 +291,14 @@ public class InteractionRaycaster : MonoBehaviour
         PickUpObject(obj);
     }
 
-    // PICK UP OBJECT TO HAND + PREVIEW
-
     void PickUpObject(GameObject obj)
     {
+        // only one thing in hand: if we pick a world object, clear equipped visual
+        if (EquipManager.Instance != null)
+        {
+            EquipManager.Instance.ForceUnequipInstant(false);
+        }
+
         heldObject = obj;
         heldRigidbody = heldObject.GetComponent<Rigidbody>();
 
@@ -317,6 +333,10 @@ public class InteractionRaycaster : MonoBehaviour
         if (previewPickup != null)
             Object.Destroy(previewPickup);
 
+        FishCrate previewCrate = previewObject.GetComponent<FishCrate>();
+        if (previewCrate != null)
+            Object.Destroy(previewCrate);
+
         previewColliders = previewObject.GetComponentsInChildren<Collider>();
         foreach (Collider c in previewColliders)
             c.isTrigger = true;
@@ -342,9 +362,38 @@ public class InteractionRaycaster : MonoBehaviour
         UpdatePickupProgressUI(0f, true);
         if (uiManager != null)
             uiManager.HideInteractText();
+
+        ForceUpdatePreviewPosition();
     }
 
-    // PLACEMENT MODE
+    void ForceUpdatePreviewPosition()
+    {
+        if (previewObject == null) return;
+
+        Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
+        RaycastHit hit;
+
+        // Her seye ray at (ground disinda crate de yakalayalim)
+        bool hasHit = Physics.Raycast(ray, out hit, placeDistance, ~0, QueryTriggerInteraction.Ignore);
+
+        bool validSurface = false;
+
+        if (hasHit)
+        {
+            bool isGround = ((groundLayer.value & (1 << hit.collider.gameObject.layer)) != 0);
+            bool isCrateSurface = IsHoldingFishCratePreview() && hit.collider.GetComponentInParent<FishCrate>() != null;
+
+            validSurface = isGround || isCrateSurface;
+        }
+
+        Vector3 pos;
+        if (validSurface) pos = CalculatePlacementPosition(hit);
+        else pos = playerCamera.transform.position + playerCamera.transform.forward * (placeDistance * 0.5f);
+
+        previewObject.transform.position = pos;
+        previewObject.transform.rotation = currentRotation;
+    }
+
 
     void HandlePlacementMode()
     {
@@ -360,7 +409,17 @@ public class InteractionRaycaster : MonoBehaviour
 
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
         RaycastHit hit;
-        bool hasGround = Physics.Raycast(ray, out hit, placeDistance, groundLayer);
+        bool hasHit = Physics.Raycast(ray, out hit, placeDistance, ~0, QueryTriggerInteraction.Ignore);
+
+        bool hasGround = false;
+        if (hasHit)
+        {
+            bool isGround = ((groundLayer.value & (1 << hit.collider.gameObject.layer)) != 0);
+            bool isCrateSurface = IsHoldingFishCratePreview() && hit.collider.GetComponentInParent<FishCrate>() != null;
+
+            hasGround = isGround || isCrateSurface;
+        }
+
 
         Vector3 previewPos;
         if (hasGround)
@@ -382,7 +441,7 @@ public class InteractionRaycaster : MonoBehaviour
         if (uiManager != null)
         {
             if (!hasGround)
-                uiManager.ShowInteractText("Look at the ground to place");
+                uiManager.ShowInteractText("Look at ground to place");
             else if (hasOverlap)
                 uiManager.ShowInteractText("Cannot place here");
             else
@@ -465,8 +524,6 @@ public class InteractionRaycaster : MonoBehaviour
             uiManager.HideInteractText();
     }
 
-    // CANCEL PLACEMENT
-
     public void CancelPlacementPreview(bool returnToInventory)
     {
         if (heldObject == null && previewObject == null)
@@ -508,8 +565,6 @@ public class InteractionRaycaster : MonoBehaviour
             uiManager.HideInteractText();
     }
 
-    // Conversation helpers
-
     public void BlockPlacementForConversation(bool block)
     {
         blockPlacementFromConversation = block;
@@ -540,8 +595,6 @@ public class InteractionRaycaster : MonoBehaviour
         }
     }
 
-    // HELPERS
-
     void SetPreviewColor(bool isValid)
     {
         if (previewRenderers == null) return;
@@ -559,6 +612,8 @@ public class InteractionRaycaster : MonoBehaviour
     {
         if (previewColliders == null || previewColliders.Length == 0)
             return false;
+
+        bool holdingCrate = IsHoldingFishCratePreview();
 
         foreach (Collider c in previewColliders)
         {
@@ -578,14 +633,44 @@ public class InteractionRaycaster : MonoBehaviour
             foreach (Collider hit in hits)
             {
                 if (hit == null) continue;
+
+                // preview'in kendi colliderlari
                 if (hit.transform.root == previewObject.transform.root)
                     continue;
 
+                // --- SADECE FishCrate icin: crate'e temas serbest, ic ice girmek yasak ---
+                if (holdingCrate)
+                {
+                    FishCrate otherCrate = hit.GetComponentInParent<FishCrate>();
+                    if (otherCrate != null)
+                    {
+                        // preview collider alt seviyesi
+                        float previewBottomY = c.bounds.min.y;
+                        // diger crate ust seviyesi
+                        float otherTopY = hit.bounds.max.y;
+
+                        // Eger preview alt seviyesi, diger crate ustunden daha asagidaysa -> ic ice
+                        if (previewBottomY < otherTopY - crateStackEpsilon)
+                            return true;
+
+                        // aksi halde (ustu uste) bu hit'i engel sayma
+                        continue;
+                    }
+                }
+
+                // crate degilse veya crate degil item ise normal engel
                 return true;
             }
         }
 
         return false;
+    }
+
+    bool IsHoldingFishCratePreview()
+    {
+        if (!HasHeldWorldPreview()) return false;
+        if (heldObject == null) return false;
+        return heldObject.GetComponent<FishCrate>() != null;
     }
 
     void UpdatePickupProgressUI(float normalized, bool hide = false)
@@ -611,20 +696,16 @@ public class InteractionRaycaster : MonoBehaviour
         }
     }
 
-    // NEW: logic to decide if pickup is allowed with current equipped item
     bool CanPickupThis(PickupItem pickup)
     {
-        // no pickup component -> do not restrict
         if (pickup == null || pickup.itemData == null)
             return true;
 
         ItemData data = pickup.itemData;
 
-        // if this item does not require repair tool, allow
         if (!data.requiresRepairToolForPickup)
             return true;
 
-        // this item requires repair tool in hand
         if (EquipManager.Instance == null)
             return false;
 

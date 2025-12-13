@@ -132,6 +132,12 @@ public class SaveManager : MonoBehaviour
         PickupItem[] worldItems = FindObjectsOfType<PickupItem>();
         foreach (var p in worldItems)
         {
+            if (p == null) continue;
+
+            // IMPORTANT: FishCrate olanlar world item olarak kaydedilmesin!
+            if (p.GetComponent<FishCrate>() != null)
+                continue;
+
             if (p.itemData == null) continue;
             if (!p.gameObject.activeInHierarchy) continue;
             if (!p.saveToWorld) continue;
@@ -145,10 +151,14 @@ public class SaveManager : MonoBehaviour
             data.worldItems.Add(w);
         }
 
-        // fish crates
         FishCrate[] crates = FindObjectsOfType<FishCrate>();
         foreach (var c in crates)
         {
+            if (c == null) continue;
+
+            // Safety: ignore preview clones
+            if (c.gameObject.name.Contains("_Preview")) continue;
+
             if (c.fishDef == null) continue;
             if (c.kgAmount <= 0) continue;
 
@@ -161,6 +171,7 @@ public class SaveManager : MonoBehaviour
             };
             data.fishCrates.Add(cd);
         }
+
 
         // player
         if (playerTransform != null)
@@ -255,12 +266,22 @@ public class SaveManager : MonoBehaviour
         var existing = FindObjectsOfType<PickupItem>();
         foreach (var p in existing)
         {
+            if (p == null) continue;
             if (!p.saveToWorld) continue;
+
+            // IMPORTANT: FishCrate olanlari burada silme (crate temizleme zaten yapacak)
+            if (p.GetComponent<FishCrate>() != null)
+                continue;
+
             Destroy(p.gameObject);
         }
 
+
         // clear existing crates
-        var existingCrates = FindObjectsOfType<FishCrate>();
+        var existingCrates = Object.FindObjectsByType<FishCrate>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None
+        );
         foreach (var c in existingCrates)
         {
             Destroy(c.gameObject);

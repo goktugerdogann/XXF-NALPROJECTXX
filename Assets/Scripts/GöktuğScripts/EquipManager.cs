@@ -46,19 +46,15 @@ public class EquipManager : MonoBehaviour
 
     void Update()
     {
-        // drop key
         if (Input.GetKeyDown(KeyCode.G))
             DropEquipped();
 
-        // inventory aciksa hotbar calismasin
         if (InventoryUI.Instance != null && InventoryUI.Instance.IsOpen)
             return;
 
-        // bir villager ile konusuyorsak hotbar calismasin
         if (VillagerInteractionCam.Current != null)
             return;
 
-        // hotbar 1-4
         if (Input.GetKeyDown(KeyCode.Alpha1)) EquipFromSlot(0);
         if (Input.GetKeyDown(KeyCode.Alpha2)) EquipFromSlot(1);
         if (Input.GetKeyDown(KeyCode.Alpha3)) EquipFromSlot(2);
@@ -80,6 +76,15 @@ public class EquipManager : MonoBehaviour
     public void EquipFromSlot(int slotIndex)
     {
         if (isSwitching) return;
+
+        // BLOCK: if holding world preview (FishCrate etc), do not allow equipping anything
+        InteractionRaycaster ray = FindObjectOfType<InteractionRaycaster>();
+        if (ray != null && ray.HasHeldWorldPreview())
+        {
+            if (ray.uiManager != null)
+                ray.uiManager.ShowInteractText("Place the crate first");
+            return;
+        }
 
         var ui = InventoryUI.Instance;
         if (ui != null && ui.IsOpen)
@@ -105,6 +110,18 @@ public class EquipManager : MonoBehaviour
         StartCoroutine(EquipFromSlotRoutine(slotIndex));
     }
 
+    public void ForceUnequipInstant(bool save = false)
+    {
+        ClearEquippedVisualImmediate();
+
+        currentItem = null;
+        currentFromInventory = false;
+        currentSlotIndex = -1;
+
+        if (save && SaveManager.Instance != null)
+            SaveManager.Instance.SaveGame();
+    }
+
     IEnumerator EquipFromSlotRoutine(int slotIndex)
     {
         isSwitching = true;
@@ -126,7 +143,6 @@ public class EquipManager : MonoBehaviour
 
         var slot = inventory.slots[slotIndex];
 
-        // empty slot: hide current
         if (slot.IsEmpty)
         {
             yield return HideCurrentIfAny();
@@ -149,14 +165,12 @@ public class EquipManager : MonoBehaviour
             yield break;
         }
 
-        // hide old equipped item
         yield return HideCurrentIfAny();
 
         currentItem = data;
         currentSlotIndex = slotIndex;
         currentFromInventory = true;
 
-        // placeable -> preview mode
         if (currentItem.isPlaceable)
         {
             if (ray != null)
@@ -166,7 +180,6 @@ public class EquipManager : MonoBehaviour
             yield break;
         }
 
-        // normal equipped item
         GameObject prefabToUse = currentItem.equippedPrefab != null
             ? currentItem.equippedPrefab
             : currentItem.worldPrefab;
