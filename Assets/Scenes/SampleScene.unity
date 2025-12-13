@@ -5102,19 +5102,18 @@ MonoBehaviour:
   carryAnchor: {fileID: 155986864}
   interactDistance: 3
   zoneMask:
-    serializedVersion: 2
     m_Bits: 4294967295
-  pickupKey: 101
+  pickupKey: 282
   spacingX: 0.35
   spacingZ: 0.35
   perRow: 3
   liftY: 0.15
   groundLayer:
-    serializedVersion: 2
     m_Bits: 8
   dropForward: 1.5
   dropYOffset: 0.02
   debugLog: 0
+  carrying: 0
 --- !u!1 &453672599
 GameObject:
   m_ObjectHideFlags: 0
@@ -17723,27 +17722,15 @@ GameObject:
   - component: {fileID: 1775691514}
   - component: {fileID: 1775691513}
   - component: {fileID: 1775691512}
-  - component: {fileID: 1775691511}
-  m_Layer: 0
+  - component: {fileID: 1775691517}
+  - component: {fileID: 1775691516}
+  m_Layer: 13
   m_Name: Tepsi
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1775691511
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1775691510}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 54cc8a353e553144197e5154aa0f2f3a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  debugLog: 0
 --- !u!65 &1775691512
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -17759,12 +17746,12 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 1, y: 25.545341, z: 1}
-  m_Center: {x: 0, y: 12.272672, z: 0}
+  m_Size: {x: 0.99999994, y: 1, z: 0.99999994}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!23 &1775691513
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -17824,12 +17811,67 @@ Transform:
   m_GameObject: {fileID: 1775691510}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -16.83, y: 1.86, z: -3.36}
-  m_LocalScale: {x: 3.5527, y: 0.1960567, z: 3.5527}
+  m_LocalPosition: {x: -16.83, y: 2.34, z: -3.36}
+  m_LocalScale: {x: 2.5478544, y: 0.14060402, z: 2.5478544}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 2137879865}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!54 &1775691516
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1775691510}
+  serializedVersion: 4
+  m_Mass: 1
+  m_Drag: 0
+  m_AngularDrag: 0.05
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 1
+  m_IsKinematic: 0
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0
+--- !u!114 &1775691517
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1775691510}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 47aee8d04133eb64b95fea009cd999f5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerCamera: {fileID: 963194227}
+  carryAnchor: {fileID: 155986864}
+  collector: {fileID: 2137879864}
+  toggleKey: 101
+  interactDistance: 2.5
+  trayLayer:
+    serializedVersion: 2
+    m_Bits: 8192
+  groundLayer:
+    serializedVersion: 2
+    m_Bits: 0
+  dropRayHeight: 1
+  maxDropDownDistance: 5
+  carriedLocalPos: {x: 0, y: -0.25, z: 0.6}
+  carriedLocalEuler: {x: 0, y: 0, z: 0}
 --- !u!1 &1793613306
 GameObject:
   m_ObjectHideFlags: 0
@@ -21100,6 +21142,74 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2134101101}
   m_CullTransparentMesh: 1
+--- !u!1 &2137879863
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2137879865}
+  - component: {fileID: 2137879866}
+  - component: {fileID: 2137879864}
+  m_Layer: 13
+  m_Name: TepsiRoot
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2137879864
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2137879863}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3f6cbe4c75fbfe4469a6b05e3c7079b1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  cratesRoot: {fileID: 2137879865}
+  onlyFishCrate: 1
+--- !u!4 &2137879865
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2137879863}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.84, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1775691515}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &2137879866
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2137879863}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 13.794556, z: 1}
+  m_Center: {x: 0, y: 6.3972793, z: 0}
 --- !u!1 &2141675149
 GameObject:
   m_ObjectHideFlags: 0

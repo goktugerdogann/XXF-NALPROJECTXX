@@ -99,12 +99,7 @@ public class InteractionRaycaster : MonoBehaviour
 
     void Update()
     {
-        CrateCarrier carrier = FindObjectOfType<CrateCarrier>();
-        if (carrier != null && carrier.IsCarryingCrates())
-        {
-            if (uiManager != null) uiManager.ShowInteractText("Press E to drop crates");
-            return;
-        }
+       
 
         if (blockPlacementFromConversation)
         {
