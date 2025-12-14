@@ -520,21 +520,21 @@ public class FPController : MonoBehaviour
         _velocity.x = currentHorizontal.x;
         _velocity.z = currentHorizontal.z;
 
-        Vector3 playerMovement = _velocity * Time.deltaTime;
+        Vector3 finalMove = _velocity * Time.deltaTime;
 
         if (isOnMovingPlatform)
         {
-            _velocity.y = -1f;
+            // Y yere yapıştır
+            finalMove.y = Mathf.Min(finalMove.y, -1f * Time.deltaTime);
+
+            // platform delta’yı EKLE (frame-space, delta zaten)
+            finalMove += platformMoveDelta;
+
             _isGrounded = true;
             _lastGroundedTime = Time.time;
-
-            if (isOnMovingPlatform)
-            {
-                controller.Move(platformMoveDelta); // SADECE platform hareketi
-            }
         }
 
-        controller.Move(playerMovement);
+        controller.Move(finalMove);
     }
 
     Vector3 ProjectOnGround(Vector3 vec)
