@@ -93,7 +93,11 @@ public class TrainController : MonoBehaviour
         }
 
         // Sürtünme
-        currentSpeed -= Mathf.Sign(currentSpeed) * rollingResistance * Time.fixedDeltaTime;
+        currentSpeed = Mathf.MoveTowards(
+            currentSpeed,
+            0f,
+            rollingResistance * Time.fixedDeltaTime
+        );
 
         // Hız sınırı
         currentSpeed = Mathf.Clamp(currentSpeed, -maxSpeed, maxSpeed);
