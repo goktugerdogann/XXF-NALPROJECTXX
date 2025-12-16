@@ -13,6 +13,10 @@ public class InteractionRaycaster : MonoBehaviour
     public float placeDistance = 4f;
     public LayerMask groundLayer;
 
+    // NEW: separate surface mask for FishCrate placement
+    [Header("FishCrate Place Settings")]
+    public LayerMask fishCrateGroundLayer;
+
     [Header("Snap Settings")]
     public bool useGridSnap = true;
     public float gridSize = 0.5f;
@@ -48,13 +52,14 @@ public class InteractionRaycaster : MonoBehaviour
 
     float pickupTimer = 0f;
     bool isHoldingPickup = false;
+
     [Header("FishCrate Stacking")]
-    public float crateStackEpsilon = 0.02f; // 2 cm tolerans
+    public float crateStackEpsilon = 0.02f;
 
     GameObject heldObject;
     Rigidbody heldRigidbody;
-
     float heldHeightOffset;
+
     Quaternion baseRotation;
     Quaternion currentRotation;
     float rotationAngleY = 0f;
@@ -64,9 +69,9 @@ public class InteractionRaycaster : MonoBehaviour
     Collider[] previewColliders;
 
     bool isPlacementMode = false;
-
     bool isPlacingFromInventory = false;
     ItemData placingFromInventoryItem = null;
+
     bool inventoryWasOpen = false;
 
     public bool HasActiveInventoryPreview
@@ -76,7 +81,6 @@ public class InteractionRaycaster : MonoBehaviour
 
     public bool HasHeldWorldPreview()
     {
-        // inventoryden place edilen preview degil, world preview (FishCrate vs)
         return isPlacementMode && !isPlacingFromInventory && heldObject != null;
     }
 
@@ -84,11 +88,8 @@ public class InteractionRaycaster : MonoBehaviour
     {
         Debug.Log(Application.persistentDataPath);
 
-        if (playerCamera == null)
-            playerCamera = Camera.main;
-
-        if (uiManager == null)
-            uiManager = FindObjectOfType<InteractionUIManager>();
+        if (playerCamera == null) playerCamera = Camera.main;
+        if (uiManager == null) uiManager = FindObjectOfType<InteractionUIManager>();
 
         if (pickupProgressImage != null)
         {
@@ -99,21 +100,16 @@ public class InteractionRaycaster : MonoBehaviour
 
     void Update()
     {
-       
-
         if (blockPlacementFromConversation)
         {
             if (previewObject != null && previewObject.activeSelf)
                 previewObject.SetActive(false);
 
-            if (uiManager != null)
-                uiManager.HideInteractText();
-
+            if (uiManager != null) uiManager.HideInteractText();
             return;
         }
 
         bool invOpen = (InventoryUI.Instance != null && InventoryUI.Instance.IsOpen);
-
         if (invOpen)
         {
             if (!inventoryWasOpen)
@@ -131,9 +127,7 @@ public class InteractionRaycaster : MonoBehaviour
                     previewObject.SetActive(false);
             }
 
-            if (uiManager != null)
-                uiManager.HideInteractText();
-
+            if (uiManager != null) uiManager.HideInteractText();
             return;
         }
         else
@@ -141,21 +135,13 @@ public class InteractionRaycaster : MonoBehaviour
             if (inventoryWasOpen)
             {
                 inventoryWasOpen = false;
-
-                if (previewObject != null &&
-                    !previewObject.activeSelf &&
-                    heldObject != null &&
-                    isPlacementMode)
-                {
+                if (previewObject != null && !previewObject.activeSelf && heldObject != null && isPlacementMode)
                     previewObject.SetActive(true);
-                }
             }
         }
 
-        if (heldObject == null)
-            HandlePickup();
-        else
-            HandlePlacementMode();
+        if (heldObject == null) HandlePickup();
+        else HandlePlacementMode();
     }
 
     void HandlePickup()
@@ -183,9 +169,7 @@ public class InteractionRaycaster : MonoBehaviour
                     UpdatePickupProgressUI(0f, true);
                 }
 
-                if (uiManager != null)
-                    uiManager.ShowInteractText("Need repair tool");
-
+                if (uiManager != null) uiManager.ShowInteractText("Need repair tool");
                 return;
             }
 
@@ -198,34 +182,28 @@ public class InteractionRaycaster : MonoBehaviour
                 }
 
                 pickupTimer += Time.deltaTime;
-                if (uiManager != null)
-                    uiManager.ShowInteractText("Hold Q to pick up");
 
+                if (uiManager != null) uiManager.ShowInteractText("Hold Q to pick up");
                 UpdatePickupProgressUI(pickupTimer / pickupHoldTime);
 
                 if (pickupTimer >= pickupHoldTime)
                 {
                     if (pickup != null && pickup.goesToInventory && pickup.itemData != null)
                     {
-                        bool added = (Inventory.Instance != null) &&
-                                     Inventory.Instance.AddItem(pickup.itemData, pickup.amount);
-
+                        bool added = (Inventory.Instance != null) && Inventory.Instance.AddItem(pickup.itemData, pickup.amount);
                         if (added)
                         {
                             target.SetActive(false);
 
-                            if (SaveManager.Instance != null)
-                                SaveManager.Instance.SaveGame();
+                            if (SaveManager.Instance != null) SaveManager.Instance.SaveGame();
 
                             Object.Destroy(target);
 
-                            if (uiManager != null)
-                                uiManager.ShowInteractText(pickup.itemData.displayName + " added");
+                            if (uiManager != null) uiManager.ShowInteractText(pickup.itemData.displayName + " added");
                         }
                         else
                         {
-                            if (uiManager != null)
-                                uiManager.ShowInteractText("Inventory full");
+                            if (uiManager != null) uiManager.ShowInteractText("Inventory full");
                         }
                     }
                     else
@@ -249,8 +227,7 @@ public class InteractionRaycaster : MonoBehaviour
                     UpdatePickupProgressUI(0f, true);
                 }
 
-                if (uiManager != null)
-                    uiManager.ShowInteractText("Press Q to pick up");
+                if (uiManager != null) uiManager.ShowInteractText("Press Q to pick up");
             }
         }
         else
@@ -262,8 +239,7 @@ public class InteractionRaycaster : MonoBehaviour
             }
 
             UpdatePickupProgressUI(0f, true);
-            if (uiManager != null)
-                uiManager.HideInteractText();
+            if (uiManager != null) uiManager.HideInteractText();
         }
     }
 
@@ -288,6 +264,13 @@ public class InteractionRaycaster : MonoBehaviour
 
     void PickUpObject(GameObject obj)
     {
+        // If this is a FishCrate, release crates above to avoid floating stacks
+        FishCrate pickedCrate = obj != null ? obj.GetComponent<FishCrate>() : null;
+        if (pickedCrate != null)
+        {
+            ReleaseCratesAbove(pickedCrate);
+        }
+
         // only one thing in hand: if we pick a world object, clear equipped visual
         if (EquipManager.Instance != null)
         {
@@ -318,45 +301,38 @@ public class InteractionRaycaster : MonoBehaviour
             heldRigidbody.angularVelocity = Vector3.zero;
         }
 
-        if (previewObject != null)
-            Object.Destroy(previewObject);
+        if (previewObject != null) Object.Destroy(previewObject);
 
         previewObject = Object.Instantiate(heldObject);
         previewObject.name = heldObject.name + "_Preview";
 
         PickupItem previewPickup = previewObject.GetComponent<PickupItem>();
-        if (previewPickup != null)
-            Object.Destroy(previewPickup);
+        if (previewPickup != null) Object.Destroy(previewPickup);
 
         FishCrate previewCrate = previewObject.GetComponent<FishCrate>();
-        if (previewCrate != null)
-            Object.Destroy(previewCrate);
+        if (previewCrate != null) Object.Destroy(previewCrate);
 
         previewColliders = previewObject.GetComponentsInChildren<Collider>();
-        foreach (Collider c in previewColliders)
-            c.isTrigger = true;
+        foreach (Collider c in previewColliders) c.isTrigger = true;
 
         Rigidbody prb = previewObject.GetComponent<Rigidbody>();
-        if (prb != null)
-            Object.Destroy(prb);
+        if (prb != null) Object.Destroy(prb);
 
         previewRenderers = previewObject.GetComponentsInChildren<Renderer>();
-
         if (previewMaterial != null)
         {
-            foreach (Renderer r in previewRenderers)
-                r.material = previewMaterial;
+            foreach (Renderer r in previewRenderers) r.material = previewMaterial;
         }
 
         previewObject.SetActive(true);
         SetPreviewColor(false);
 
         heldObject.SetActive(false);
+
         isPlacementMode = true;
 
         UpdatePickupProgressUI(0f, true);
-        if (uiManager != null)
-            uiManager.HideInteractText();
+        if (uiManager != null) uiManager.HideInteractText();
 
         ForceUpdatePreviewPosition();
     }
@@ -368,17 +344,20 @@ public class InteractionRaycaster : MonoBehaviour
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
         RaycastHit hit;
 
-        // Her seye ray at (ground disinda crate de yakalayalim)
         bool hasHit = Physics.Raycast(ray, out hit, placeDistance, ~0, QueryTriggerInteraction.Ignore);
 
         bool validSurface = false;
-
         if (hasHit)
         {
-            bool isGround = ((groundLayer.value & (1 << hit.collider.gameObject.layer)) != 0);
-            bool isCrateSurface = IsHoldingFishCratePreview() && hit.collider.GetComponentInParent<FishCrate>() != null;
+            bool holdingCrate = IsHoldingFishCratePreview();
 
-            validSurface = isGround || isCrateSurface;
+            bool isGroundForNonCrate = !holdingCrate && ((groundLayer.value & (1 << hit.collider.gameObject.layer)) != 0);
+
+            bool isGroundForCrate = holdingCrate && ((fishCrateGroundLayer.value & (1 << hit.collider.gameObject.layer)) != 0);
+
+            bool isCrateSurface = holdingCrate && hit.collider.GetComponentInParent<FishCrate>() != null;
+
+            validSurface = isGroundForNonCrate || isGroundForCrate || isCrateSurface;
         }
 
         Vector3 pos;
@@ -389,11 +368,9 @@ public class InteractionRaycaster : MonoBehaviour
         previewObject.transform.rotation = currentRotation;
     }
 
-
     void HandlePlacementMode()
     {
-        if (!isPlacementMode)
-            isPlacementMode = true;
+        if (!isPlacementMode) isPlacementMode = true;
 
         float scroll = Input.GetAxis("Mouse ScrollWheel");
         if (Mathf.Abs(scroll) > 0.0001f)
@@ -404,24 +381,26 @@ public class InteractionRaycaster : MonoBehaviour
 
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
         RaycastHit hit;
+
         bool hasHit = Physics.Raycast(ray, out hit, placeDistance, ~0, QueryTriggerInteraction.Ignore);
 
-        bool hasGround = false;
+        bool hasValidSurface = false;
         if (hasHit)
         {
-            bool isGround = ((groundLayer.value & (1 << hit.collider.gameObject.layer)) != 0);
-            bool isCrateSurface = IsHoldingFishCratePreview() && hit.collider.GetComponentInParent<FishCrate>() != null;
+            bool holdingCrate = IsHoldingFishCratePreview();
 
-            hasGround = isGround || isCrateSurface;
+            bool isGroundForNonCrate = !holdingCrate && ((groundLayer.value & (1 << hit.collider.gameObject.layer)) != 0);
+
+            bool isGroundForCrate = holdingCrate && ((fishCrateGroundLayer.value & (1 << hit.collider.gameObject.layer)) != 0);
+
+            bool isCrateSurface = holdingCrate && hit.collider.GetComponentInParent<FishCrate>() != null;
+
+            hasValidSurface = isGroundForNonCrate || isGroundForCrate || isCrateSurface;
         }
 
-
         Vector3 previewPos;
-        if (hasGround)
-            previewPos = CalculatePlacementPosition(hit);
-        else
-            previewPos = playerCamera.transform.position +
-                         playerCamera.transform.forward * (placeDistance * 0.5f);
+        if (hasValidSurface) previewPos = CalculatePlacementPosition(hit);
+        else previewPos = playerCamera.transform.position + playerCamera.transform.forward * (placeDistance * 0.5f);
 
         if (previewObject != null)
         {
@@ -430,26 +409,26 @@ public class InteractionRaycaster : MonoBehaviour
             previewObject.transform.rotation = currentRotation;
         }
 
-        bool hasOverlap = hasGround && CheckOverlapAtPreview();
-        bool isValidSpot = hasGround && !hasOverlap;
+        bool hasOverlap = hasValidSurface && CheckOverlapAtPreview();
+        bool isValidSpot = hasValidSurface && !hasOverlap;
 
         if (uiManager != null)
         {
-            if (!hasGround)
-                uiManager.ShowInteractText("Look at ground to place");
-            else if (hasOverlap)
-                uiManager.ShowInteractText("Cannot place here");
-            else
-                uiManager.ShowInteractText("Left click to place");
+            bool holdingCrate = IsHoldingFishCratePreview();
+
+            if (!hasValidSurface)
+            {
+                if (holdingCrate) uiManager.ShowInteractText("Look at valid crate surface to place");
+                else uiManager.ShowInteractText("Look at ground to place");
+            }
+            else if (hasOverlap) uiManager.ShowInteractText("Cannot place here");
+            else uiManager.ShowInteractText("Left click to place");
         }
 
         SetPreviewColor(isValidSpot);
 
-        if (Input.GetMouseButtonDown(0) && isValidSpot)
-            PlaceObject(previewPos);
-
-        if (Input.GetMouseButtonDown(1))
-            CancelPlacementPreview(true);
+        if (Input.GetMouseButtonDown(0) && isValidSpot) PlaceObject(previewPos);
+        if (Input.GetMouseButtonDown(1)) CancelPlacementPreview(true);
     }
 
     Vector3 CalculatePlacementPosition(RaycastHit hit)
@@ -476,8 +455,7 @@ public class InteractionRaycaster : MonoBehaviour
 
     void PlaceObject(Vector3 placePos)
     {
-        if (heldObject == null)
-            return;
+        if (heldObject == null) return;
 
         heldObject.transform.position = placePos;
         heldObject.transform.rotation = currentRotation;
@@ -487,8 +465,18 @@ public class InteractionRaycaster : MonoBehaviour
         {
             heldRigidbody.isKinematic = false;
             heldRigidbody.useGravity = true;
-            if (freezeOnPlace)
+
+            bool isCrate = (heldObject != null && heldObject.GetComponent<FishCrate>() != null);
+
+            if (freezeOnPlace && !isCrate)
+            {
                 heldRigidbody.constraints = RigidbodyConstraints.FreezeAll;
+            }
+            else
+            {
+                heldRigidbody.constraints = RigidbodyConstraints.FreezeRotation;
+                heldRigidbody.WakeUp();
+            }
         }
 
         if (previewObject != null)
@@ -499,24 +487,21 @@ public class InteractionRaycaster : MonoBehaviour
             previewColliders = null;
         }
 
-        if (SaveManager.Instance != null)
-            SaveManager.Instance.SaveGame();
+        if (SaveManager.Instance != null) SaveManager.Instance.SaveGame();
 
-        if (isPlacingFromInventory &&
-            placingFromInventoryItem != null &&
-            EquipManager.Instance != null)
+        if (isPlacingFromInventory && placingFromInventoryItem != null && EquipManager.Instance != null)
         {
             EquipManager.Instance.ConsumeEquippedItemOne();
         }
 
         heldObject = null;
         heldRigidbody = null;
+
         isPlacementMode = false;
         isPlacingFromInventory = false;
         placingFromInventoryItem = null;
 
-        if (uiManager != null)
-            uiManager.HideInteractText();
+        if (uiManager != null) uiManager.HideInteractText();
     }
 
     public void CancelPlacementPreview(bool returnToInventory)
@@ -556,8 +541,7 @@ public class InteractionRaycaster : MonoBehaviour
         isPlacingFromInventory = false;
         placingFromInventoryItem = null;
 
-        if (uiManager != null)
-            uiManager.HideInteractText();
+        if (uiManager != null) uiManager.HideInteractText();
     }
 
     public void BlockPlacementForConversation(bool block)
@@ -578,10 +562,7 @@ public class InteractionRaycaster : MonoBehaviour
         }
         else
         {
-            if (previewWasActiveBeforeConversation &&
-                previewObject != null &&
-                isPlacementMode &&
-                heldObject != null)
+            if (previewWasActiveBeforeConversation && previewObject != null && isPlacementMode && heldObject != null)
             {
                 previewObject.SetActive(true);
             }
@@ -605,8 +586,7 @@ public class InteractionRaycaster : MonoBehaviour
 
     bool CheckOverlapAtPreview()
     {
-        if (previewColliders == null || previewColliders.Length == 0)
-            return false;
+        if (previewColliders == null || previewColliders.Length == 0) return false;
 
         bool holdingCrate = IsHoldingFishCratePreview();
 
@@ -629,31 +609,22 @@ public class InteractionRaycaster : MonoBehaviour
             {
                 if (hit == null) continue;
 
-                // preview'in kendi colliderlari
-                if (hit.transform.root == previewObject.transform.root)
-                    continue;
+                if (hit.transform.root == previewObject.transform.root) continue;
 
-                // --- SADECE FishCrate icin: crate'e temas serbest, ic ice girmek yasak ---
                 if (holdingCrate)
                 {
                     FishCrate otherCrate = hit.GetComponentInParent<FishCrate>();
                     if (otherCrate != null)
                     {
-                        // preview collider alt seviyesi
                         float previewBottomY = c.bounds.min.y;
-                        // diger crate ust seviyesi
                         float otherTopY = hit.bounds.max.y;
 
-                        // Eger preview alt seviyesi, diger crate ustunden daha asagidaysa -> ic ice
-                        if (previewBottomY < otherTopY - crateStackEpsilon)
-                            return true;
+                        if (previewBottomY < otherTopY - crateStackEpsilon) return true;
 
-                        // aksi halde (ustu uste) bu hit'i engel sayma
                         continue;
                     }
                 }
 
-                // crate degilse veya crate degil item ise normal engel
                 return true;
             }
         }
@@ -670,8 +641,7 @@ public class InteractionRaycaster : MonoBehaviour
 
     void UpdatePickupProgressUI(float normalized, bool hide = false)
     {
-        if (!usePickupProgress || pickupProgressImage == null)
-            return;
+        if (!usePickupProgress || pickupProgressImage == null) return;
 
         if (hide)
         {
@@ -693,17 +663,71 @@ public class InteractionRaycaster : MonoBehaviour
 
     bool CanPickupThis(PickupItem pickup)
     {
-        if (pickup == null || pickup.itemData == null)
-            return true;
+        if (pickup == null || pickup.itemData == null) return true;
 
         ItemData data = pickup.itemData;
+        if (!data.requiresRepairToolForPickup) return true;
 
-        if (!data.requiresRepairToolForPickup)
-            return true;
-
-        if (EquipManager.Instance == null)
-            return false;
-
+        if (EquipManager.Instance == null) return false;
         return EquipManager.Instance.IsHoldingRepairTool();
+    }
+
+    // ------------------------------
+    // CRATE STACK FIX HELPERS
+    // ------------------------------
+    void ReleaseCratesAbove(FishCrate removedCrate)
+    {
+        if (removedCrate == null) return;
+
+        Collider baseCol = removedCrate.GetComponentInChildren<Collider>();
+        if (baseCol == null) return;
+
+        Bounds b = baseCol.bounds;
+
+        Vector3 center = b.center + Vector3.up * (b.extents.y + 0.6f);
+        Vector3 halfExt = new Vector3(b.extents.x * 0.9f, 0.6f, b.extents.z * 0.9f);
+
+        Collider[] hits = Physics.OverlapBox(
+            center,
+            halfExt,
+            Quaternion.identity,
+            ~0,
+            QueryTriggerInteraction.Ignore
+        );
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider h = hits[i];
+            if (h == null) continue;
+
+            FishCrate crate = h.GetComponentInParent<FishCrate>();
+            if (crate == null) continue;
+            if (crate == removedCrate) continue;
+
+            if (crate.transform.position.y <= removedCrate.transform.position.y + 0.02f)
+                continue;
+
+            MakeCrateDynamic(crate);
+        }
+    }
+
+    void MakeCrateDynamic(FishCrate crate)
+    {
+        if (crate == null) return;
+
+        crate.transform.SetParent(null, true);
+
+        Rigidbody rb = crate.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.isKinematic = false;
+            rb.useGravity = true;
+            rb.constraints = RigidbodyConstraints.None;
+            rb.WakeUp();
+        }
+
+        var cols = crate.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < cols.Length; i++)
+            if (cols[i] != null) cols[i].enabled = true;
     }
 }
