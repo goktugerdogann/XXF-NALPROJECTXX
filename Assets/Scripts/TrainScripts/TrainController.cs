@@ -30,6 +30,7 @@ public class TrainController : MonoBehaviour
 
     void Start()
     {
+        lastPos = transform.position;
 
         rb = GetComponent<Rigidbody>();
     }

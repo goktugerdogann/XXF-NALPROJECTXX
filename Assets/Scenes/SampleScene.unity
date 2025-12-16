@@ -4603,6 +4603,7 @@ GameObject:
   - component: {fileID: 449633829}
   - component: {fileID: 449633833}
   - component: {fileID: 449633834}
+  - component: {fileID: 449633835}
   m_Layer: 5
   m_Name: Canvas
   m_TagString: Untagged
@@ -4788,6 +4789,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   dragIcon: {fileID: 1520570388}
   draggedSlotIndex: -1
+--- !u!114 &449633835
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 449633828}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d37cdb29ce776d64d8e4a1e97719ed85, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  hintText: {fileID: 1814490535}
+  controlPanel: {fileID: 449633828}
 --- !u!1 &450252351
 GameObject:
   m_ObjectHideFlags: 0
@@ -4806,6 +4821,7 @@ GameObject:
   - component: {fileID: 450252362}
   - component: {fileID: 450252364}
   - component: {fileID: 450252363}
+  - component: {fileID: 450252365}
   m_Layer: 7
   m_Name: Player
   m_TagString: Player
@@ -5098,22 +5114,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ce8c8c6f63117f04ab911ad16fe93f92, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerCamera: {fileID: 963194227}
-  carryAnchor: {fileID: 155986864}
-  interactDistance: 3
-  zoneMask:
-    m_Bits: 4294967295
-  pickupKey: 282
-  spacingX: 0.35
-  spacingZ: 0.35
-  perRow: 3
-  liftY: 0.15
-  groundLayer:
-    m_Bits: 8
-  dropForward: 1.5
-  dropYOffset: 0.02
-  debugLog: 0
-  carrying: 0
+--- !u!114 &450252365
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 450252351}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ab3ffbbbc358bb43873c700aa8d1ad6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  trainController: {fileID: 618833788}
 --- !u!1 &453672599
 GameObject:
   m_ObjectHideFlags: 0
@@ -6385,6 +6398,21 @@ Rigidbody:
   m_Interpolate: 1
   m_Constraints: 36
   m_CollisionDetection: 1
+--- !u!114 &618833810
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 618833787}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fadc89e2ae2dcc24ca82ec8c63c520ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  interactionKey: 101
+  playerObject: {fileID: 450252351}
+  trainController: {fileID: 618833788}
 --- !u!1 &648339453
 GameObject:
   m_ObjectHideFlags: 0
@@ -21405,6 +21433,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2983789124782316547, guid: f0ec5ea40f9150e4ba0109641a8a7652, type: 3}
       insertIndex: -1
       addedObject: {fileID: 618833805}
+    - targetCorrespondingSourceObject: {fileID: 2983789124782316547, guid: f0ec5ea40f9150e4ba0109641a8a7652, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 618833810}
   m_SourcePrefab: {fileID: 100100000, guid: f0ec5ea40f9150e4ba0109641a8a7652, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
